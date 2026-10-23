@@ -1,0 +1,69 @@
+# Dependencies & Virtual Environments
+node_modules/
+frontend/node_modules/
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+backend/.venv/
+
+# Environment & Secrets (Never commit credentials)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+*.der
+credentials.json
+firebase-service-account.json
+serviceAccountKey.json
+*serviceAccount*.json
+**/uploads/
+
+# Local Runtime Database & Ledgers
+backend/data/*.json
+!backend/data/.gitkeep
+
+# Build Artifacts
+dist/
+frontend/dist/
+build/
+*.egg-info/
+.vercel/
+.vite/
+frontend/.vite/
+
+# IDE & Editor Files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Operating System
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs & Temporary Files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+firebase-debug.log*
+*.tmp
+*.bak
+scratch/
+.pytest_cache/
+.coverage
+
+# Archives & Distribution Bundles
+*.zip
+*.tar.gz
+*.rar
+SMART-ECO-BIN-COMPLETE.zip

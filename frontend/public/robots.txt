@@ -1,0 +1,19 @@
+# robots.txt for EcoSort AI / SMART ECO BIN
+User-agent: *
+Allow: /
+Allow: /welcome
+Allow: /login
+Allow: /register
+
+# Exclude authenticated user sessions, administrative portals, and internal telemetry APIs
+Disallow: /dashboard
+Disallow: /admin
+Disallow: /admin/
+Disallow: /history
+Disallow: /sanitation
+Disallow: /anomalies
+Disallow: /profile
+Disallow: /settings
+Disallow: /api/
+
+Sitemap: https://ecosort-ai.vercel.app/sitemap.xml

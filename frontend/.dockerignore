@@ -1,0 +1,11 @@
+# SMART ECO BIN — Frontend Docker Build Ignore Rules
+node_modules/
+dist/
+.git/
+.gitignore
+.env
+.env.*
+*.pem
+*.key
+*.tmp
+*.log

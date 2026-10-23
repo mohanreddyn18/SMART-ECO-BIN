@@ -1,0 +1,30 @@
+# SMART ECO BIN — Production Docker Build Ignore Rules
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.venv/
+**/node_modules/
+**/dist/
+.git/
+.github/
+.gitignore
+.env
+.env.*
+*.pem
+*.key
+*.tmp
+*.log
+tests/
+docs/
+*.md
+
+# Exclude local JSON ledgers & records from container images
+backend/data/*.json
+backend/data/*.tmp
+
+# Exclude cloud credentials & service account secrets
+*service_account*.json
+*.sa.json
+credentials.json
+client_secret*.json

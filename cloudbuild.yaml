@@ -1,0 +1,84 @@
+# ==============================================================================
+# SMART ECO BIN — Google Cloud Build Configuration
+# Automated testing, frontend compilation, and container image assembly
+# Note: Live deployment is intentionally gated and requires manual authorization.
+# ==============================================================================
+
+steps:
+  # ----------------------------------------------------------------------------
+  # Step 1: Run Backend Test Suite
+  # ----------------------------------------------------------------------------
+  - name: 'python:3.11-slim'
+    id: 'backend-unit-tests'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        apt-get update && apt-get install -y --no-install-recommends build-essential
+        pip install --upgrade pip
+        pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+        pip install -r requirements.txt
+        python -m unittest discover -s tests -p "test_*.py" -v
+    env:
+      - 'STORAGE_PROVIDER=local'
+      - 'ROUTING_UNCERTAINTY_THRESHOLD=0.0'
+
+  # ----------------------------------------------------------------------------
+  # Step 2: Build Frontend Production Bundle
+  # ----------------------------------------------------------------------------
+  - name: 'node:20-alpine'
+    id: 'frontend-build'
+    dir: 'frontend'
+    entrypoint: 'sh'
+    args:
+      - '-c'
+      - |
+        npm ci
+        npm run build
+
+  # ----------------------------------------------------------------------------
+  # Step 3: Build Backend Container Image
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-backend-image'
+    args:
+      - 'build'
+      - '-f'
+      - 'backend/Dockerfile'
+      - '-t'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO/ecosort-backend:$COMMIT_SHA'
+      - '-t'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO/ecosort-backend:latest'
+      - '.'
+
+  # ----------------------------------------------------------------------------
+  # Step 4: Build Frontend Container Image
+  # ----------------------------------------------------------------------------
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-frontend-image'
+    dir: 'frontend'
+    args:
+      - 'build'
+      - '-f'
+      - 'Dockerfile'
+      - '--build-arg'
+      - 'VITE_API_BASE_URL=$_BACKEND_URL'
+      - '-t'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO/ecosort-frontend:$COMMIT_SHA'
+      - '-t'
+      - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO/ecosort-frontend:latest'
+      - '.'
+
+substitutions:
+  _REGION: 'us-central1'
+  _ARTIFACT_REPO: 'smart-eco-bin'
+  _BACKEND_URL: ''
+
+images:
+  - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO/ecosort-backend:$COMMIT_SHA'
+  - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO/ecosort-backend:latest'
+  - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO/ecosort-frontend:$COMMIT_SHA'
+  - '$_REGION-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REPO/ecosort-frontend:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

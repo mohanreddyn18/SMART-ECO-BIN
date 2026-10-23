@@ -1,0 +1,257 @@
+name: SMART ECO BIN — Continuous Integration & Deployment Readiness
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      deploy_confirmed:
+        description: 'Explicit approval to deploy to Cloud Run (true/false)'
+        required: true
+        default: 'false'
+        type: boolean
+      target_environment:
+        description: 'Target Cloud Run Environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+  id-token: write # Required for Google Cloud Workload Identity Federation (keyless auth)
+
+jobs:
+  # ============================================================================
+  # 1. Backend Test Suite & Migration Validation
+  # ============================================================================
+  test-backend:
+    name: Backend Tests & Validation (Python 3.11)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install PyTorch CPU & Backend Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # Pre-install lightweight CPU-only PyTorch & TorchVision
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -r backend/requirements.txt
+
+      - name: Verify AI Model Artifacts
+        run: |
+          python -c "
+          import os
+          assert os.path.exists('ml/model/waste_model.pth'), 'Model weights missing'
+          assert os.path.exists('ml/metadata/model_metadata.json'), 'Metadata missing'
+          if os.path.exists('ml/model/waste_detector.pt'):
+              print('Multi-object detector weights verified.')
+          print('Model weights and metadata verified successfully.')
+          "
+
+      - name: Run Complete Backend Unit & Integration Tests
+        env:
+          STORAGE_PROVIDER: local
+          ROUTING_UNCERTAINTY_THRESHOLD: 0.0
+        run: |
+          python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Validate Firestore Migration CLI (Dry-Run Mode)
+        env:
+          STORAGE_PROVIDER: local
+        run: |
+          python backend/migrate_to_firestore.py --dry-run
+
+  # ============================================================================
+  # 2. Frontend Production Build & Asset Verification
+  # ============================================================================
+  build-frontend:
+    name: Frontend Production Build (Node 20 / Vite)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
+
+      - name: Install Frontend Dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build Vite Production Assets
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: ""
+        run: npm run build
+
+      - name: Validate Production Build Output
+        run: |
+          test -f frontend/dist/index.html
+          echo "Frontend dist bundle verified successfully."
+
+  # ============================================================================
+  # 3. Security, Secret Isolation & Configuration Audit
+  # ============================================================================
+  security-audit:
+    name: Security & Secret Leak Prevention Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Audit for Committed Secrets & Environment Files
+        run: |
+          echo "Scanning for accidental secret leaks..."
+          # Fail if real .env file or private keys are tracked in git
+          if git ls-files | grep -E '^(\.env|\.env\.production|\.env\.local|\.pem|\.key)$'; then
+            echo "SECURITY ERROR: Sensitive credentials or local .env file found tracked in git!"
+            exit 1
+          fi
+          # Check for service account JSON files
+          if git ls-files | grep -iE '(service[-_]account|credentials\.json|\.sa\.json)'; then
+            echo "SECURITY ERROR: Service account credentials file committed to git!"
+            exit 1
+          fi
+          echo "No committed secrets or credential files detected."
+
+      - name: Validate .dockerignore File Exclusions
+        run: |
+          python -c "
+          for path in ['.dockerignore', 'backend/.dockerignore', 'frontend/.dockerignore']:
+              with open(path, 'r') as f:
+                  content = f.read()
+                  assert '.env' in content, f'{path} must ignore .env'
+                  print(f'Verified ignore rules in {path}')
+          "
+
+  # ============================================================================
+  # 4. Container Image Build Verification
+  # ============================================================================
+  build-containers:
+    name: Container Build Verification (Docker)
+    needs: [test-backend, build-frontend, security-audit]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Backend Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: false
+          tags: ecosort-backend:ci-check
+
+      - name: Build Frontend Container Image
+        uses: docker/build-push-action@v5
+        with:
+          context: frontend/
+          file: frontend/Dockerfile
+          push: false
+          tags: ecosort-frontend:ci-check
+          build-args: |
+            VITE_API_BASE_URL=https://placeholder-backend-url.a.run.app
+
+  # ============================================================================
+  # 5. Gated Manual Deployment to Cloud Run (Separate Authorised Action Only)
+  # ============================================================================
+  deploy-cloud-run:
+    name: Deploy to Google Cloud Run (Manual Gate)
+    needs: [build-containers]
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_confirmed == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.target_environment }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Recommended Keyless Authentication via Google Cloud Workload Identity Federation
+      # Zero long-lived service account JSON keys stored in repository secrets.
+      - name: Authenticate to Google Cloud via Workload Identity Federation
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Authorize Artifact Registry Docker Helper
+        run: gcloud auth configure-docker ${{ vars.GCP_REGION }}-docker.pkg.dev
+
+      - name: Build & Publish Backend Image
+        run: |
+          docker build -f backend/Dockerfile \
+            -t ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REPO }}/ecosort-backend:${{ github.sha }} .
+          docker push ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REPO }}/ecosort-backend:${{ github.sha }}
+
+      - name: Deploy Backend to Cloud Run
+        run: |
+          gcloud run deploy ecosort-backend \
+            --image ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REPO }}/ecosort-backend:${{ github.sha }} \
+            --platform managed \
+            --region ${{ vars.GCP_REGION }} \
+            --service-account ${{ vars.GCP_SERVICE_ACCOUNT }} \
+            --set-env-vars STORAGE_PROVIDER=firestore,GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }},FIRESTORE_COLLECTION=waste_records \
+            --memory 1Gi \
+            --cpu 1 \
+            --allow-unauthenticated
+
+      - name: Capture Backend URL
+        id: backend-url
+        run: |
+          URL=$(gcloud run services describe ecosort-backend --platform managed --region ${{ vars.GCP_REGION }} --format 'value(status.url)')
+          echo "BACKEND_URL=$URL" >> $GITHUB_ENV
+          echo "Backend deployed at: $URL"
+
+      - name: Build & Publish Frontend Image (with Backend URL Injected)
+        run: |
+          docker build -f frontend/Dockerfile \
+            --build-arg VITE_API_BASE_URL="${{ env.BACKEND_URL }}" \
+            -t ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REPO }}/ecosort-frontend:${{ github.sha }} frontend/
+          docker push ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REPO }}/ecosort-frontend:${{ github.sha }}
+
+      - name: Deploy Frontend to Cloud Run
+        run: |
+          gcloud run deploy ecosort-frontend \
+            --image ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REPO }}/ecosort-frontend:${{ github.sha }} \
+            --platform managed \
+            --region ${{ vars.GCP_REGION }} \
+            --memory 256Mi \
+            --cpu 1 \
+            --allow-unauthenticated
+
+      - name: Capture Frontend URL & Update Backend CORS
+        run: |
+          FRONTEND_URL=$(gcloud run services describe ecosort-frontend --platform managed --region ${{ vars.GCP_REGION }} --format 'value(status.url)')
+          echo "Updating backend CORS origins with frontend URL: $FRONTEND_URL"
+          gcloud run services update ecosort-backend \
+            --region ${{ vars.GCP_REGION }} \
+            --update-env-vars CORS_ORIGINS="$FRONTEND_URL"
+          echo "Deployment complete. Frontend: $FRONTEND_URL | Backend: ${{ env.BACKEND_URL }}"

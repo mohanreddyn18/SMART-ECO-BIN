@@ -1,0 +1,3 @@
+# SMART ECO BIN — Root Requirements File
+# Redirects to the authoritative backend dependency specification
+-r backend/requirements.txt

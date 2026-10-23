@@ -1,0 +1,36 @@
+{
+    "project_id": "RJ 147",
+    "project_title": "Smart Waste Segregation and Sanitation System",
+    "selected_model": "MobileNetV2 Transfer Learning",
+    "num_classes": 12,
+    "class_names": [
+        "battery",
+        "biological",
+        "brown-glass",
+        "cardboard",
+        "clothes",
+        "green-glass",
+        "metal",
+        "paper",
+        "plastic",
+        "shoes",
+        "trash",
+        "white-glass"
+    ],
+    "internal_test": {
+        "total_images": 1552,
+        "accuracy": 95.75,
+        "precision": 95.77,
+        "recall": 95.75,
+        "f1_score": 95.73
+    },
+    "external_test": {
+        "total_images": 24,
+        "correct_predictions": 22,
+        "incorrect_predictions": 2,
+        "accuracy": 91.67
+    },
+    "model_file": "/content/RJ147_FastAPI_Model/waste_model.pth",
+    "metadata_file": "/content/RJ147_FastAPI_Model/model_metadata.json",
+    "confusion_matrix_file": "/content/RJ147_confusion_matrix.png"
+}

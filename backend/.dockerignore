@@ -1,0 +1,29 @@
+# SMART ECO BIN — Backend Docker Build Ignore Rules
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+.git/
+.gitignore
+.env
+.env.*
+*.pem
+*.key
+*.tmp
+*.log
+tests/
+node_modules/
+
+# Exclude local JSON ledger records
+data/*.json
+data/*.tmp
+
+# Exclude credentials and secrets
+*service_account*.json
+*.sa.json
+credentials.json
+client_secret*.json
