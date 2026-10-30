@@ -1,4 +1,5 @@
-# SMART ECO BIN / EcoSort AI
+# SMART-ECO-BIN
+## SMART ECO BIN / EcoSort AI
 ## Intelligent Multi-Object Waste Segregation & Municipal Sanitation Intelligence Platform
 
 [![CI/CD Status](https://github.com/mohanreddyn18/SMART-ECO-BIN/actions/workflows/ci.yml/badge.svg)](https://github.com/mohanreddyn18/SMART-ECO-BIN/actions/workflows/ci.yml)
