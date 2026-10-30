@@ -76,6 +76,7 @@ class LocalStorageProvider(BaseStorageProvider):
             os.makedirs(data_dir, exist_ok=True)
             self.storage_file = os.path.join(data_dir, "classification_records.json")
 
+        os.makedirs(os.path.dirname(self.storage_file), exist_ok=True)
         self._load_from_disk()
 
     def _load_from_disk(self):
@@ -204,14 +205,12 @@ class LocalStorageProvider(BaseStorageProvider):
 
     def get_status(self) -> Dict[str, Any]:
         with self._lock:
-            # Sanitize path to prevent disclosing local host filesystem structure in public telemetry
-            sanitized_path = "backend/data/classification_records.json"
-            if self.storage_file:
-                try:
-                    rel = os.path.relpath(self.storage_file, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-                    sanitized_path = rel.replace("\\", "/")
-                except Exception:
-                    sanitized_path = os.path.basename(self.storage_file)
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            default_path = os.path.join(base_dir, "data", "classification_records.json")
+            if os.path.normcase(os.path.abspath(self.storage_file)) == os.path.normcase(default_path):
+                sanitized_path = "backend/data/classification_records.json"
+            else:
+                sanitized_path = os.path.basename(self.storage_file) or "custom local JSON ledger"
 
             return {
                 "mode": "development_emulation",
@@ -506,7 +505,8 @@ def create_storage_provider() -> BaseStorageProvider:
         return _init_firestore_provider()
 
     logger.info("Initializing LocalStorageProvider (Development Emulation JSON Ledger).")
-    return LocalStorageProvider()
+    storage_file = os.getenv("LOCAL_STORAGE_FILE") or None
+    return LocalStorageProvider(storage_file=storage_file)
 
 
 # Single application-wide storage instance

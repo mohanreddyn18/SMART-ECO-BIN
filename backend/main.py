@@ -92,12 +92,16 @@ from app.models.schemas import StorageStatusResponse
 @app.get("/health", tags=["Health"])
 async def health_check():
     from app.services.model_service import classifier_service
+    from app.services.detector_service import detector_service
     from app.services.storage_service import storage_service
     return {
-        "status": "healthy" if classifier_service.is_loaded else "degraded",
+        "status": "healthy" if classifier_service.is_loaded and detector_service.model_status == "loaded" else "degraded",
         "service": "EcoSort AI API Gateway",
         "version": "1.0.0",
         "model_loaded": classifier_service.is_loaded,
+        "classifier_loaded": classifier_service.is_loaded,
+        "classifier_error": classifier_service.load_error,
+        "detector_loaded": detector_service.model_status == "loaded",
         "mode": "Software-Only (Pure Computational Intelligence)",
         "hardware_sensors": False,
         "storage_mode": storage_service.get_status()["mode"]

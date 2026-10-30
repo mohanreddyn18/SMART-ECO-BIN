@@ -83,12 +83,28 @@ export function getStatusColor(status) {
   }
 }
 
+export function getImageMimeType(file) {
+  if (!file) return null;
+
+  const supportedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+  const declaredType = file.type?.toLowerCase();
+  if (supportedTypes.includes(declaredType)) return declaredType;
+
+  const extension = file.name?.split('.').pop()?.toLowerCase();
+  const typesByExtension = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    webp: 'image/webp'
+  };
+  return typesByExtension[extension] || null;
+}
+
 export function validateImageFile(file) {
-  const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
   const maxSize = 10 * 1024 * 1024; // 10MB
 
   if (!file) return { valid: false, error: 'No file selected' };
-  if (!validTypes.includes(file.type)) {
+  if (!getImageMimeType(file)) {
     return { valid: false, error: 'Invalid file type. Please upload JPG, JPEG, PNG, or WebP images.' };
   }
   if (file.size > maxSize) {

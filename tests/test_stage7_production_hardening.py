@@ -230,7 +230,6 @@ class TestStage7ProductionHardening(unittest.TestCase):
         admin_endpoints = [
             ("GET", "/api/sanitation"),
             ("GET", "/api/anomalies"),
-            ("GET", "/api/predictive-insights"),
             ("POST", "/api/sanitationai"),
         ]
 
@@ -300,6 +299,22 @@ class TestStage7ProductionHardening(unittest.TestCase):
         alice_ids = [r["id"] for r in alice_records]
         self.assertIn("REC-ALICE-101", alice_ids)
         self.assertNotIn("REC-BOB-202", alice_ids)
+
+        alice_predictions = self.client.get(
+            "/api/predictive-insights",
+            headers={"Authorization": f"Bearer {alice_token}"}
+        )
+        self.assertEqual(alice_predictions.status_code, 200)
+        self.assertEqual(alice_predictions.json()["scope"], "personal")
+        self.assertEqual(alice_predictions.json()["currentEvents"], 1)
+
+        bob_predictions = self.client.get(
+            "/api/predictive-insights",
+            headers={"Authorization": f"Bearer {bob_token}"}
+        )
+        self.assertEqual(bob_predictions.status_code, 200)
+        self.assertEqual(bob_predictions.json()["scope"], "personal")
+        self.assertEqual(bob_predictions.json()["currentEvents"], 1)
 
         # Alice cannot directly inspect Bob's record (HTTP 403)
         resp_direct = self.client.get("/api/history/REC-BOB-202", headers={"Authorization": f"Bearer {alice_token}"})

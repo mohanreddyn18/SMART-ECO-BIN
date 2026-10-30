@@ -1,0 +1,38 @@
+name: Deploy static GitHub Pages site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'github-pages/**'
+      - '.github/workflows/github-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: github-pages/package-lock.json
+      - uses: actions/configure-pages@v5
+      - run: npm ci
+        working-directory: github-pages
+      - run: npm run build
+        working-directory: github-pages
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: github-pages/dist
+      - uses: actions/deploy-pages@v4

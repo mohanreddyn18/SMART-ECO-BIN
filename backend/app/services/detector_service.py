@@ -316,20 +316,29 @@ class WasteDetectorService:
         self.iou_threshold = DEFAULT_IOU_THRESHOLD
         self.backend: Optional[BaseDetectorBackend] = None
         self.model_status = "not_configured"
-        self.model_path = model_path or os.getenv("WASTE_DETECTOR_MODEL_PATH")
+        configured_path = (
+            model_path
+            or os.getenv("WASTE_DETECTOR_MODEL_PATH")
+            or os.getenv("DETECTOR_MODEL_PATH")
+        )
+        repository_root = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "..")
+        )
 
         # Discover default weights paths
-        if not self.model_path:
-            candidate_paths = [
-                os.path.join(os.path.dirname(__file__), "..", "..", "..", "ml", "model", "waste_detector.pt"),
-                os.path.join(os.path.dirname(__file__), "..", "..", "..", "ml", "model", "waste_detector.pth"),
-                "ml/model/waste_detector.pt",
-                "ml/model/waste_detector.pth"
-            ]
-            for p in candidate_paths:
-                if os.path.exists(p):
-                    self.model_path = os.path.abspath(p)
-                    break
+        candidate_paths = []
+        if configured_path:
+            candidate_paths.append(configured_path)
+            if not os.path.isabs(configured_path):
+                candidate_paths.append(os.path.join(repository_root, configured_path))
+        candidate_paths.extend([
+            os.path.join(repository_root, "ml", "model", "waste_detector.pt"),
+            os.path.join(repository_root, "ml", "model", "waste_detector.pth"),
+        ])
+        self.model_path = next(
+            (os.path.abspath(path) for path in candidate_paths if os.path.exists(path)),
+            None,
+        )
 
         if self.model_path and os.path.exists(self.model_path):
             self._init_real_backend(self.model_path)

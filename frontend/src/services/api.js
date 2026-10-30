@@ -1,3 +1,5 @@
+import { getImageMimeType } from '../utils/helpers';
+
 /**
  * Central API Client for SMART ECO BIN Public Service Platform
  * ============================================================
@@ -152,7 +154,11 @@ export const api = {
     if (!file) throw new ApiError('No image file provided for classification.');
 
     const formData = new FormData();
-    formData.append('file', file);
+    const mimeType = getImageMimeType(file);
+    const uploadFile = mimeType && file.type !== mimeType
+      ? new File([file], file.name, { type: mimeType, lastModified: file.lastModified })
+      : file;
+    formData.append('file', uploadFile);
 
     const headers = {};
     if (idempotencyKey) {
@@ -175,7 +181,11 @@ export const api = {
     if (!file) throw new ApiError('No image file provided for waste detection.');
 
     const formData = new FormData();
-    formData.append('file', file);
+    const mimeType = getImageMimeType(file);
+    const uploadFile = mimeType && file.type !== mimeType
+      ? new File([file], file.name, { type: mimeType, lastModified: file.lastModified })
+      : file;
+    formData.append('file', uploadFile);
 
     const headers = {};
     if (idempotencyKey) {

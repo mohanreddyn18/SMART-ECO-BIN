@@ -8,10 +8,11 @@
 > **Deployment status:** This workspace has not been deployed or connected to a verified production API. The previously listed Vercel URL does not serve this project.  
 > **GitHub Repository:** [https://github.com/mohanreddyn18/SMART-ECO-BIN](https://github.com/mohanreddyn18/SMART-ECO-BIN)
 
+> **Current local model status:** The classifier checkpoint matches the validated committed model and both the classifier and detector loaded successfully in the local backend environment. Real-world waste-photo accuracy has not been independently evaluated. See [SETUP_GUIDE.md](SETUP_GUIDE.md) and [TESTING.md](TESTING.md).
 
 EcoSort AI is a waste-segregation web application with two computer-vision workflows:
-1. **Single-Item Classifier:** PyTorch `MobileNetV2` fine-tuned across 12 distinct municipal waste categories with 95.75% validation accuracy.
-2. **Mixed-Waste Multi-Object Detector:** PyTorch/TorchVision `SSDLite320-MobileNetV3` object detector that localizes multiple items in one photograph, generates visual bounding boxes and confidence scores, and routes each item to an authoritative disposal stream (**Wet/Organic**, **Dry/Recyclable**, **Hazardous**, or **Manual Review**) with tailored preparation instructions and safety warnings.
+1. **Single-Item Classifier:** PyTorch `MobileNetV2` intended to classify 12 municipal waste categories. Reported benchmark accuracy is not independently reproduced here; predictions require a valid checkpoint.
+2. **Mixed-Waste Multi-Object Detector:** PyTorch/TorchVision `SSDLite320-MobileNetV3` detector that can return object labels, bounding boxes, and confidence scores, with per-object disposal guidance. The underlying detector is a generic COCO model, not a validated waste-specific model.
 3. **Longitudinal Telemetry & Analytics:** Supports Google Cloud Firestore when configured, or a local JSON ledger in development, with 7-period time filtering and baseline comparisons.
 
 ---
@@ -56,7 +57,7 @@ graph TD
 ## Repository Structure
 
 ```
-RJ147-Smart-Waste/
+SMART-ECO-BIN/
 ├── frontend/                     # React 18 + Vite SPA (Vercel-ready)
 │   ├── public/                   # SEO assets: robots.txt, sitemap.xml, favicon.svg
 │   ├── src/pages/public/         # Public discovery LandingPage.jsx (accessible without auth)
@@ -70,11 +71,11 @@ RJ147-Smart-Waste/
 │   ├── app/services/             # Model loading, detector service, waste routing engine, analytics
 │   └── Dockerfile                # Single-worker, non-root PyTorch CPU container
 ├── ml/
-│   ├── model/waste_model.pth     # 9.8 MB MobileNetV2 12-class classifier
+│   ├── model/waste_model.pth     # Validated MobileNetV2 12-class classifier checkpoint
 │   ├── model/waste_detector.pt   # 13.5 MB SSDLite320-MobileNetV3 multi-object detector
 │   ├── metadata/                 # Class mappings & performance benchmarks
 │   └── train_waste_detector.py   # Dataset validation, TACO converter, and export pipeline
-├── tests/                        # 136 automated regression & integration tests
+├── tests/                        # unittest regression and integration tests
 ├── .github/workflows/ci.yml      # GitHub Actions CI/CD with security scanning & deployment gates
 ├── cloudbuild.yaml               # Google Cloud Build automation specification
 ├── requirements.txt              # Root dependency redirect
@@ -86,20 +87,16 @@ RJ147-Smart-Waste/
 ## AI Capabilities & Limitations
 
 ### 1. Single-Item Classifier (`MobileNetV2`)
-- **Weights:** `ml/model/waste_model.pth` (~9.8 MB)
+- **Weights:** `ml/model/waste_model.pth` (validated checkpoint; loads in the local backend environment)
 - **Input:** 224 × 224 RGB image
 - **Classes (12):** `battery`, `biological`, `brown-glass`, `cardboard`, `clothes`, `green-glass`, `metal`, `paper`, `plastic`, `shoes`, `trash`, `white-glass`
 - **Output:** Categorical label, confidence score, and software segregation simulation.
-- **Accuracy:** 95.75% validation accuracy on test benchmark.
+- **Accuracy:** 95.75% is a reported project benchmark and has not been independently reproduced in this verification.
 
 ### 2. Multi-Object Mixed-Waste Detector (`SSDLite320-MobileNetV3`)
 - **Weights:** `ml/model/waste_detector.pt` (~13.5 MB)
 - **Engine:** PyTorch / TorchVision CPU runtime with Non-Maximum Suppression (NMS)
-- **Scope & Limitations:** Pre-trained on 91 COCO categories. Accurately localizes learned categories:
-  - **Wet / Organic:** Apples, bananas, oranges, broccoli, carrots, bakery discards, food scraps.
-  - **Dry / Recyclable:** Beverage bottles, cups, cans, glassware, cutlery, clean containers.
-  - **Hazardous:** Batteries, laptops, phones, remotes, electronic accessories.
-  - **Manual Review:** Ambiguous composite packaging, unlisted items, or low-confidence detections.
+- **Scope & Limitations:** Uses generic COCO object labels; it is not a validated waste classifier. Disposal routing is a heuristic based on detected labels and should be manually checked, especially for hazardous, contaminated, or composite items. Low-confidence and unrecognized labels require manual review.
 - **Verification note:** A local smoke check loaded the available classifier checkpoint and returned a non-demo result for a generated image. Accuracy on real waste photographs has not been verified as part of this work.
 
 ---
@@ -130,6 +127,8 @@ Every filtered view calculates **baseline comparisons** versus the previous equi
 ---
 
 ## Local Development Quickstart
+
+For the complete Windows instructions, data-preserving test commands, and current checkpoint caveat, see [SETUP_GUIDE.md](SETUP_GUIDE.md) and [TESTING.md](TESTING.md).
 
 ### Prerequisites
 - Python 3.11+

@@ -23,6 +23,7 @@ export default function WasteDetectionPage() {
   const [preview, setPreview] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isDragging, setIsDragging] = useState(false);
   const [result, setResult] = useState(null);
   const [detectionResult, setDetectionResult] = useState(null);
   const [confThreshold, setConfThreshold] = useState(0.25);
@@ -172,6 +173,7 @@ export default function WasteDetectionPage() {
 
   const handleDrop = (e) => {
     e.preventDefault();
+    setIsDragging(false);
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       handleFileSelect(e.dataTransfer.files[0]);
     }
@@ -179,6 +181,7 @@ export default function WasteDetectionPage() {
 
   const handleDragOver = (e) => {
     e.preventDefault();
+    setIsDragging(true);
   };
 
   const handleClassify = async (overrideThreshold = null) => {
@@ -355,10 +358,22 @@ export default function WasteDetectionPage() {
           {/* Mode 1: File Upload (when no preview) */}
           {!preview && inputMode === 'upload' && (
             <div
-              className="upload-dropzone"
+              className={`upload-area${isDragging ? ' dragover' : ''}`}
+              role="button"
+              tabIndex={0}
+              aria-label="Choose or drop a waste image"
               onDrop={handleDrop}
               onDragOver={handleDragOver}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget)) setIsDragging(false);
+              }}
               onClick={() => fileInputRef.current?.click()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  fileInputRef.current?.click();
+                }
+              }}
             >
               <input
                 ref={fileInputRef}

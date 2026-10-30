@@ -7,9 +7,8 @@ CLASS_NAMES = [
     'green-glass', 'metal', 'paper', 'plastic', 'shoes', 'trash', 'white-glass'
 ]
 
-# Configurable uncertainty threshold (0.0 means transparent reporting without artificial gatekeeping;
-# can be configured via environment variable ROUTING_UNCERTAINTY_THRESHOLD)
-DEFAULT_UNCERTAINTY_THRESHOLD = float(os.getenv("ROUTING_UNCERTAINTY_THRESHOLD", "0.0"))
+# Low-confidence single-item predictions require operator confirmation by default.
+DEFAULT_UNCERTAINTY_THRESHOLD = float(os.getenv("ROUTING_UNCERTAINTY_THRESHOLD", "60.0"))
 
 # Authoritative Digital Software Compartment Definitions
 COMPARTMENTS = {

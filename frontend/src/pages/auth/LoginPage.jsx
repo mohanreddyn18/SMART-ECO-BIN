@@ -119,7 +119,7 @@ export default function LoginPage() {
           textAlign: 'center',
           marginBottom: '16px'
         }}>
-          <strong>Local demo access:</strong> The password is not stored or verified. Administrator access is granted only when the backend authorizes the account. Cross-device accounts require a configured production identity provider.
+          <strong>Local development access:</strong> Use any valid email and a non-empty password for a citizen session. For the configured local administrator, use <code>admin@ecosortai.com</code>. Passwords are not stored or verified in demo mode; cross-device accounts require a configured production identity provider.
         </div>
 
         <div className="auth-footer">

@@ -28,6 +28,7 @@ class WasteClassifierService:
         self.classes = CLASS_NAMES
         self.model = None
         self.is_loaded = False
+        self.load_error = None
 
         # Exact preprocessing discovered from Colab metadata
         self.transform = transforms.Compose([
@@ -57,7 +58,8 @@ class WasteClassifierService:
         if resolved_path:
             self._load_model(resolved_path)
         else:
-            logger.warning("Trained model file waste_model.pth not found in default paths.")
+            self.load_error = "Classifier weights waste_model.pth were not found in configured or default paths."
+            logger.warning(self.load_error)
 
         self._initialized = True
 
@@ -87,6 +89,7 @@ class WasteClassifierService:
             logger.error(f"Failed to load PyTorch state dict: {e}")
             self.model = None
             self.is_loaded = False
+            self.load_error = str(e)
 
     def predict_image_bytes(self, image_bytes: bytes) -> Dict[str, Any]:
         """Runs validation, preprocessing, and forward pass on uploaded image bytes."""

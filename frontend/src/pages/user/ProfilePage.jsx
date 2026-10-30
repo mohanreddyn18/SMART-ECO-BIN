@@ -1,6 +1,6 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { FiUser, FiMail, FiShield, FiClock, FiCheckCircle } from 'react-icons/fi';
+import { FiMail, FiShield, FiClock } from 'react-icons/fi';
 
 export default function ProfilePage() {
   const { user, isAdmin } = useAuth();
@@ -74,23 +74,14 @@ export default function ProfilePage() {
           </div>
         </div>
 
-        {/* Project Attribution Card */}
         <div className="card">
           <div className="card-header">
-            <h3 className="card-title">Project Accreditation</h3>
-            <p className="card-subtitle">Final-Year B.Tech Academic Capstone</p>
+            <h3 className="card-title">Application Overview</h3>
           </div>
 
           <div style={{ fontSize: '0.9rem', color: '#4b5563', lineHeight: 1.7 }}>
-            <p><strong>Project Code:</strong> RJ 147</p>
-            <p><strong>Official Title:</strong> Smart Waste Segregation and Sanitation System</p>
-            <p><strong>Department:</strong> B.Tech CSE / AIML</p>
             <p><strong>Application:</strong> EcoSort AI — Web Intelligence Platform</p>
             <p><strong>Architecture:</strong> Pure Software Application (No Physical Hardware)</p>
-            <div style={{ marginTop: '1rem', padding: '0.75rem', background: '#eff6ff', borderRadius: '6px', color: '#1e40af' }}>
-              <FiCheckCircle style={{ marginRight: '6px' }} />
-              Authorized testing and research terminal
-            </div>
           </div>
         </div>
       </div>
