@@ -16,8 +16,8 @@ All public endpoints are documented with OpenAPI schemas at `/docs`.
 | `GET` | `/api/sanitation` | Software-computed sanitation intelligence posture |
 | `GET` | `/api/anomalies` | Admin-only, threshold-based checks over recent classification records |
 | `GET` | `/api/predictive-insights`| Authenticated, scoped exploratory trend and data sufficiency audit |
-| `POST` | `/api/wasteai` | Query conversational recycling assistant |
-| `POST` | `/api/sanitationai` | Grounded administrative AI telemetry queries |
+| `POST` | `/api/wasteai` | Gemini-generated recycling guidance and optional classifier-result explanation |
+| `POST` | `/api/sanitationai` | Admin-only Gemini explanation of an actual backend telemetry snapshot |
 
 ---
 
@@ -111,3 +111,34 @@ All public endpoints are documented with OpenAPI schemas at `/docs`.
     "forecast": null
   }
   ```
+
+### 6. Gemini AI Assistants
+
+- **WasteAI:** `POST /api/wasteai`, public with optional verified user context.
+- **SanitationAI:** `POST /api/sanitationai`, requires a verified administrator.
+- **Request body:** Both accept a `prompt` string (1-2000 characters). WasteAI
+  also accepts optional classifier metadata. The metadata is descriptive only;
+  it does not change the result, and uploaded image bytes are never sent to
+  Gemini.
+  ```json
+  {
+    "prompt": "Explain this classifier result.",
+    "classification_result": {
+      "predicted_class": "battery",
+      "confidence": 92.5,
+      "waste_type": "Hazardous / E-Waste",
+      "recommendation": "Use a designated battery collection point.",
+      "disposal_bin": "Hazardous Waste Depot",
+      "requires_manual_review": true
+    }
+  }
+  ```
+- **Provenance:** Gemini text is AI-generated, not another classification or
+  authoritative local disposal rule. SanitationAI can only describe the
+  telemetry JSON supplied by the backend; the application has no physical
+  sensors.
+- **Limits and errors:** The backend uses `GEMINI_API_KEY` from its server
+  environment, defaults to `gemini-flash-latest`, enforces a 20-second timeout,
+  limits requests to 10/minute per user or observed client IP per instance,
+  and returns HTTP 503 when Gemini is unconfigured or unavailable. Provider
+  exception details are not returned to callers.

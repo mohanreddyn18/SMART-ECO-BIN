@@ -13,9 +13,11 @@ Validates:
 
 import os
 import sys
+import asyncio
 import unittest
 from unittest.mock import patch
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 # Ensure backend root is on sys.path
 backend_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "backend"))
@@ -23,7 +25,8 @@ root_path = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
-from main import app
+from main import app, _get_allowed_origins, global_exception_handler
+from app.auth.config import SecurityConfigurationError
 
 
 class TestStage5DeploymentAndSecurity(unittest.TestCase):
@@ -92,6 +95,8 @@ class TestStage5DeploymentAndSecurity(unittest.TestCase):
         self.assertIn("WORKDIR /app/backend", content, "Backend Dockerfile must set WORKDIR to /app/backend")
         # Check healthcheck
         self.assertIn("HEALTHCHECK", content, "Backend Dockerfile must define container HEALTHCHECK")
+        self.assertIn("download.pytorch.org/whl/cpu", content)
+        self.assertIn("runtime-requirements.txt", content)
 
     def test_06_frontend_dockerfile_and_nginx_security(self):
         """Frontend Dockerfile & Nginx must include security headers and health check."""
@@ -159,6 +164,95 @@ class TestStage5DeploymentAndSecurity(unittest.TestCase):
         self.assertIn("VITE_API_BASE_URL", api_content)
         self.assertIn("API_BASE", api_content)
         self.assertIn("HEALTH_URL", api_content)
+
+    def test_11_production_cors_requires_exact_https_origins(self):
+        self.assertEqual(
+            _get_allowed_origins(
+                "https://ecosort.example,https://www.ecosort.example",
+                True,
+            ),
+            ["https://ecosort.example", "https://www.ecosort.example"],
+        )
+        for invalid_origins in (
+            "",
+            "https://ecosort.example/path",
+            "http://ecosort.example",
+            "https://*.example",
+        ):
+            with self.subTest(origins=invalid_origins):
+                with self.assertRaises(SecurityConfigurationError):
+                    _get_allowed_origins(invalid_origins, True)
+
+    def test_12_production_cors_does_not_add_localhost_origins(self):
+        self.assertEqual(
+            _get_allowed_origins("https://ecosort.example", True),
+            ["https://ecosort.example"],
+        )
+
+    def test_13_cors_allows_only_required_api_methods_and_headers(self):
+        cors_options = next(
+            middleware.kwargs
+            for middleware in app.user_middleware
+            if middleware.cls.__name__ == "CORSMiddleware"
+        )
+        self.assertEqual(cors_options["allow_methods"], ["GET", "POST", "DELETE"])
+        self.assertEqual(
+            cors_options["allow_headers"],
+            ["Accept", "Authorization", "Content-Type", "X-Idempotency-Key"],
+        )
+        self.assertFalse(cors_options["allow_credentials"])
+        response = self.client.options(
+            "/api/predict",
+            headers={
+                "Origin": "http://localhost:5173",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": (
+                    "authorization,content-type,x-idempotency-key"
+                ),
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.headers["access-control-allow-origin"],
+            "http://localhost:5173",
+        )
+
+    def test_14_unhandled_errors_do_not_disclose_exception_details(self):
+        request = Request({
+            "type": "http",
+            "method": "GET",
+            "path": "/test",
+            "headers": [],
+            "query_string": b"",
+            "server": ("test", 80),
+            "client": ("test", 123),
+            "scheme": "http",
+            "http_version": "1.1",
+            "root_path": "",
+            "app": app,
+        })
+
+        response = asyncio.run(
+            global_exception_handler(request, RuntimeError("private-backend-detail"))
+        )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertNotIn(b"private-backend-detail", response.body)
+
+    def test_15_gemini_key_is_server_only_and_env_examples_are_empty(self):
+        for path_rel in (".env.example", os.path.join("backend", ".env.example")):
+            path = os.path.join(root_path, path_rel)
+            with open(path, "r", encoding="utf-8") as file:
+                key_values = [
+                    line.partition("=")[2].strip()
+                    for line in file
+                    if line.startswith("GEMINI_API_KEY=")
+                ]
+            self.assertEqual(key_values, [""], f"{path_rel} must contain an empty key placeholder")
+
+        frontend_env_path = os.path.join(root_path, "frontend", ".env.example")
+        with open(frontend_env_path, "r", encoding="utf-8") as file:
+            self.assertNotIn("GEMINI_API_KEY", file.read())
 
 
 if __name__ == "__main__":

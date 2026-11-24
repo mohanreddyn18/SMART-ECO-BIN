@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { isFirebaseConfigured } from '../../services/firebase';
 import { FiUser, FiMail, FiLock, FiCheckCircle } from 'react-icons/fi';
 
 export default function RegisterPage() {
@@ -55,13 +56,17 @@ export default function RegisterPage() {
         </div>
 
         <div className="alert alert-info" role="note">
-          Local demo registration creates a temporary signed session only. Passwords are not stored, and accounts do not sync between devices without a production identity provider.
+          {isFirebaseConfigured
+            ? 'Create a real Firebase Authentication account. Check your email to verify the address; administrator access requires a verified account authorized by the backend.'
+            : 'Local demo registration creates a temporary signed session only. Passwords are not stored, and accounts do not sync between devices.'}
         </div>
 
         {error && <div className="alert alert-error">{error}</div>}
         {registered && (
           <div className="alert alert-success">
-            Local demo session started. No password or persistent account was created. Redirecting to dashboard...
+            {isFirebaseConfigured
+              ? 'Your Firebase account is ready. Check your email for a verification link. Redirecting to dashboard...'
+              : 'Local demo session started. No password or persistent account was created. Redirecting to dashboard...'}
           </div>
         )}
 

@@ -20,6 +20,8 @@ export default function WasteAIPage() {
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [serviceStatus, setServiceStatus] = useState('Checking backend...');
+  const [error, setError] = useState('');
   const messagesEndRef = useRef(null);
 
   const suggestedPrompts = [
@@ -37,9 +39,26 @@ export default function WasteAIPage() {
     scrollToBottom();
   }, [messages, loading]);
 
+  useEffect(() => {
+    let active = true;
+    api.getHealth()
+      .then((health) => {
+        if (active) {
+          setServiceStatus(health.gemini_configured ? 'Gemini configured' : 'Gemini not configured');
+        }
+      })
+      .catch(() => {
+        if (active) setServiceStatus('Backend unavailable');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleSend = async (textToSend) => {
     const query = textToSend || input;
-    if (!query.trim()) return;
+    if (!query.trim() || loading) return;
 
     const userMsg = {
       id: Date.now(),
@@ -51,60 +70,27 @@ export default function WasteAIPage() {
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setLoading(true);
+    setError('');
 
-    // Try backend FastAPI Gemini proxy via central API client
     try {
       const data = await api.queryWasteAI(query);
-      if (data && (data.reply || data.response)) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now() + 1,
-            sender: 'ai',
-            text: data.reply || data.response,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          }
-        ]);
-        setLoading(false);
-        return;
+      if (!data?.reply) {
+        throw new Error('WasteAI returned no response.');
       }
-    } catch {
-      // Fall back to client-side knowledge base
-    }
-
-    // Client-side fallback knowledge base
-    setTimeout(() => {
-      let reply = '';
-      const q = query.toLowerCase();
-
-      if (q.includes('battery') || q.includes('batteries')) {
-        reply =
-          '⚠️ Batteries (especially Lithium-ion and Lead-Acid) must NEVER be placed in ordinary dry or wet bins due to chemical leakage and fire risk. Take them to designated E-Waste / Battery Drop-off depots for specialized hydrometallurgical recycling.';
-      } else if (q.includes('pizza') || q.includes('grease')) {
-        reply =
-          '🍕 Cardboard pizza boxes soiled with heavy grease and cheese cannot be recycled because the oil prevents paper fibers from binding during pulping. Tear off the clean top lid for the Cardboard bin, and put the greasy base in Organic / Compost or general waste.';
-      } else if (q.includes('plastic') || q.includes('milk')) {
-        reply =
-          '🧴 Rinse plastic containers thoroughly with water to remove residue. Remove labels if easily detachable. If the plastic is marked HDPE (#2) or PET (#1), place it in the Recyclable / Dry Waste bin.';
-      } else if (q.includes('tube') || q.includes('fluorescent') || q.includes('glass')) {
-        reply =
-          '💡 Fluorescent tubes contain trace amounts of mercury vapor and belong in Hazardous/E-Waste collection, NOT regular glass bins. Regular glass bottles (clear, brown, green) should be rinsed and placed in their specific glass bins.';
-      } else {
-        reply =
-          `♻️ For "${query}": Generally, ensure materials are clean, dry, and free of food contamination before placing into the Recyclable bin. Organic food scraps belong in the Wet/Compost bin. Hazardous and electronic components require specialized drop-offs. (Connected to WasteAI knowledge base).`;
-      }
-
       setMessages((prev) => [
         ...prev,
         {
           id: Date.now() + 1,
           sender: 'ai',
-          text: reply,
+          text: data.reply,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]);
+    } catch (requestError) {
+      setError(requestError.message || 'WasteAI could not generate a response.');
+    } finally {
       setLoading(false);
-    }, 900);
+    }
   };
 
   return (
@@ -112,7 +98,8 @@ export default function WasteAIPage() {
       <div className="page-header">
         <h1 className="page-title">WasteAI Assistant</h1>
         <p className="page-subtitle">
-          Interactive AI guidance on waste segregation rules, recycling protocols, and hazardous materials
+          AI-generated waste segregation and disposal guidance. Responses are not
+          authoritative local rules or a replacement for the classifier result.
         </p>
       </div>
 
@@ -125,7 +112,9 @@ export default function WasteAIPage() {
             </div>
             <div>
               <div style={{ fontWeight: 600, color: '#111827' }}>WasteAI Knowledge Engine</div>
-              <div style={{ fontSize: '0.75rem', color: '#10b981' }}>● Ready (Gemini API Integration Interface)</div>
+              <div style={{ fontSize: '0.75rem', color: serviceStatus === 'Gemini configured' ? '#10b981' : '#b45309' }}>
+                ● {serviceStatus}
+              </div>
             </div>
           </div>
           <button
@@ -140,6 +129,7 @@ export default function WasteAIPage() {
 
         {/* Messages Scroll Area */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {error && <div className="alert alert-error" role="alert">{error}</div>}
           {messages.map((msg) => (
             <div
               key={msg.id}

@@ -8,3 +8,7 @@ classifier checkpoint status.
 Use the repository root as the project directory. The old `RJ147-Smart-Waste`
 paths and port `8000` are not applicable to this checkout; the local Vite proxy
 expects the API at `127.0.0.1:8001`.
+
+For production, deploy the original React/Vite frontend and FastAPI backend
+using [VERCEL_CLOUD_RUN_DEPLOYMENT.md](VERCEL_CLOUD_RUN_DEPLOYMENT.md).
+`github-pages/` is a separate browser-only preview, not the full application.

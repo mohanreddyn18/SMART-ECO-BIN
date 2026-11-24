@@ -19,7 +19,7 @@ export default function ForgotPasswordPage() {
 
     try {
       await resetPassword(email);
-      setMessage('Password reset instructions sent to your email address (Mock service).');
+      setMessage('If the address belongs to an account, Firebase Authentication will send password reset instructions.');
     } catch (err) {
       setError(err.message || 'Failed to send reset link.');
     } finally {

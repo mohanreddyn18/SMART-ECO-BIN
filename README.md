@@ -9,6 +9,8 @@
 > **Deployment status:** This workspace has not been deployed or connected to a verified production API. The previously listed Vercel URL does not serve this project.  
 > **GitHub Repository:** [https://github.com/mohanreddyn18/SMART-ECO-BIN](https://github.com/mohanreddyn18/SMART-ECO-BIN)
 
+> **Use the original application:** deploy `frontend/` to Vercel and `backend/` to Cloud Run. The separate `github-pages/` folder is a browser-only preview, not the original application. Its workflow is build-only and does not publish to GitHub Pages. See [the deployment guide](docs/VERCEL_CLOUD_RUN_DEPLOYMENT.md).
+
 > **Current local model status:** The classifier checkpoint matches the validated committed model and both the classifier and detector loaded successfully in the local backend environment. Real-world waste-photo accuracy has not been independently evaluated. See [SETUP_GUIDE.md](SETUP_GUIDE.md) and [TESTING.md](TESTING.md).
 
 EcoSort AI is a waste-segregation web application with two computer-vision workflows:
@@ -186,7 +188,7 @@ Run these commands against the current checkout before release; the results are 
 
 ### Local and production authentication
 
-Local registration and sign-in use development-only tokens. Passwords are not stored or checked, and locally created identities do not sync to other devices. Cross-device accounts require a production identity provider such as Firebase Authentication or OIDC, a frontend integration that obtains its verified tokens, and a deployed backend configured to verify them. Production mode intentionally rejects development tokens.
+Local registration and sign-in use development-only tokens. Production builds use Firebase Authentication when the `VITE_FIREBASE_*` configuration is set and send Firebase ID tokens to the backend for server-side verification. Production mode rejects development tokens.
 
 ---
 
@@ -203,9 +205,9 @@ The backend employs a **fail-closed security architecture**. In production or an
 | `AUTH_PROVIDER` | Yes | `firebase` | Trusted identity provider (`firebase` or `oidc`). |
 | `GOOGLE_CLOUD_PROJECT` | Yes (for Firebase/Firestore) | `your-gcp-project-id` | Target Google Cloud / Firebase project ID for token verification and Firestore. |
 | `ADMIN_EMAILS` | Yes | `admin@yourorg.gov,supervisor@sanitation.gov` | Server-controlled comma-separated allowlist of authorized administrator email accounts. |
-| `STORAGE_PROVIDER` | Yes | `firestore` (or `local`) | Persistence layer. `firestore` for cloud persistence or `local` for container storage. |
+| `STORAGE_PROVIDER` | Yes | `firestore` | Production history storage. Use Firestore; Cloud Run's local filesystem is ephemeral. |
 | `CORS_ORIGINS` | Yes | `https://your-frontend.vercel.app` | Comma-separated list of permitted frontend origins allowed to call API endpoints. |
-| `PORT` | Auto | `8000` | Port for the backend service (automatically provided by Cloud Run / Render). |
+| `PORT` | Auto | `8080` on Cloud Run; `8001` locally | Backend listen port; Cloud Run provides its own `PORT`. |
 | `VITE_API_BASE_URL` | Yes (Frontend) | `https://your-backend.a.run.app` | Frontend public build variable pointing to the deployed backend URL. |
 
 > **Security Rule:** Never place real credentials, Firebase service-account JSON keys, or passwords in `.env` files or Git repositories. Use Google Cloud Secrets Manager or host environment variable consoles.
@@ -232,58 +234,7 @@ git push -u origin main
 
 ## Public Deployment Guide
 
-### 1. Frontend Deployment (Vercel)
-Vercel hosts the React 18 + Vite frontend with instant global CDN distribution.
-
-1. Go to [Vercel](https://vercel.com/new) and click **Add New Project**.
-2. Select your imported GitHub repository `mohanreddyn18/SMART-ECO-BIN`.
-3. Configure the deployment:
-   - **Framework Preset:** `Vite`
-   - **Root Directory:** `frontend` (or project root, both `vercel.json` configurations are included)
-   - **Build Command:** `npm run build`
-   - **Output Directory:** `dist`
-4. Add Environment Variable:
-   - `VITE_API_BASE_URL`: The HTTPS URL of your deployed backend (e.g. `https://ecosort-backend.onrender.com` or `https://smart-eco-bin-backend-xyz.a.run.app`).
-   - Leave blank for local development proxy.
-5. Click **Deploy**. Vercel will provide the assigned frontend URL; this alone does not deploy the backend or enable production authentication.
-
-### 2. Backend Hosting Alternatives (Python + PyTorch)
-The backend requires Python 3.11+ and ~500 MB – 1 GB RAM to load the PyTorch weights (`waste_model.pth` and `waste_detector.pt`) into memory.
-
-#### Option A: Google Cloud Run (Recommended for Enterprise)
-1. Submit the container build:
-   ```powershell
-   gcloud builds submit --tag gcr.io/<PROJECT_ID>/ecosort-backend:latest ./backend
-   ```
-2. Deploy the service (minimum 1 vCPU, 1 GB RAM):
-   ```powershell
-   gcloud run deploy ecosort-backend \
-     --image gcr.io/<PROJECT_ID>/ecosort-backend:latest \
-     --platform managed \
-     --region us-central1 \
-     --memory 1Gi \
-     --allow-unauthenticated \
-     --set-env-vars ENVIRONMENT=production,ALLOW_DEV_AUTH=false,STORAGE_PROVIDER=firestore,GOOGLE_CLOUD_PROJECT=<PROJECT_ID>,CORS_ORIGINS=https://your-app.vercel.app
-   ```
-
-#### Option B: Render.com (Web Service)
-1. In Render Dashboard, click **New Web Service** and link your repo.
-2. Root Directory: `backend`
-3. Environment: `Python 3`
-4. Build Command: `pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu && pip install -r requirements.txt`
-5. Start Command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-6. Plan: Starter (512 MB) or Standard (1 GB).
-7. Environment Variables:
-   - `ENVIRONMENT`: `production`
-   - `STORAGE_PROVIDER`: `local` (or `firestore`)
-   - `CORS_ORIGINS`: `https://your-vercel-app.vercel.app`
-
-#### Option C: Railway.app / Docker VPS
-The included `backend/Dockerfile` builds a production-ready, non-root, single-worker PyTorch container ready to run on any Docker host or cloud VPS.
-Build it from the repository root so the model, backend source, and dependency file are inside the Docker build context:
-```powershell
-docker build -f backend/Dockerfile -t ecosort-backend .
-```
+Follow [docs/VERCEL_CLOUD_RUN_DEPLOYMENT.md](docs/VERCEL_CLOUD_RUN_DEPLOYMENT.md) for the beginner-friendly steps to deploy the original React frontend to Vercel and the model-bearing FastAPI backend to Cloud Run. That guide covers Firebase Authentication, Firestore, exact CORS origins, required environment variables, and verification. No live URL is claimed until these manual setup and deployment steps complete.
 
 ---
 
@@ -356,8 +307,4 @@ This repository is a full-stack application. The React/Vite frontend and FastAPI
 
 ### Vercel + hosted API
 
-Deploy `frontend/` to Vercel and `backend/` to Google Cloud Run or another Python host. Configure the frontend's build environment variable `VITE_API_BASE_URL` to the backend HTTPS origin only (no trailing slash and no `/api`). Configure backend `CORS_ORIGINS` to include the exact public frontend origin. Redeploy the frontend after adding or changing this variable.
-
-If you choose Vercel's repository-root deployment, use the root `vercel.json`, keep Root Directory at the repository root, use Build Command `cd frontend && npm ci && npm run build`, and Output Directory `frontend/dist`. If Root Directory is `frontend`, use Build Command `npm run build` and Output Directory `dist` instead.
-
-Never use `ALLOW_DEV_AUTH=true`, the example JWT development key, or placeholder administrator emails in production. Do not commit `.env`, API keys, service-account JSON, or other credentials.
+Use the root Vercel config with the repository root as the Vercel Root Directory. Configure `VITE_API_BASE_URL` and the public Firebase Web App values in Vercel; configure `CORS_ORIGINS`, Firebase Admin/Firestore, and optional secrets on Cloud Run. Exact commands and settings are in [docs/VERCEL_CLOUD_RUN_DEPLOYMENT.md](docs/VERCEL_CLOUD_RUN_DEPLOYMENT.md). Never use `ALLOW_DEV_AUTH=true`, the example JWT development key, or placeholder administrator emails in production.

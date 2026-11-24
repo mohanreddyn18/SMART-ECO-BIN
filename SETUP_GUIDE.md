@@ -1,5 +1,10 @@
 # SMART ECO BIN — Windows Setup Guide
 
+For production deployment of the original React/Vite + FastAPI application,
+follow [docs/VERCEL_CLOUD_RUN_DEPLOYMENT.md](docs/VERCEL_CLOUD_RUN_DEPLOYMENT.md).
+The `github-pages/` folder is a separate static preview and is not the full
+application.
+
 ## Project layout
 
 ```text
@@ -19,7 +24,7 @@ dataset, or history files need to be moved to run the application.
 ## Prerequisites
 
 - Windows PowerShell
-- Python 3.10 or later (the existing backend virtual environment is preferred)
+- Python 3.11 or later
 - Node.js 18 or later and npm
 
 Do not share or commit `backend/.env`; it may contain local credentials.
@@ -27,6 +32,21 @@ Do not share or commit `backend/.env`; it may contain local credentials.
 ledger at `backend/data/classification_records.json`. Firestore is only used
 when explicitly configured and valid credentials are available. Cloud image
 storage is not verified/configured by this local setup.
+
+## Quick start
+
+From the repository root, run the launcher (or double-click it in File Explorer):
+
+```powershell
+.\run_project.bat
+```
+
+The batch file runs `run_project.ps1` with a process-scoped execution-policy
+bypass, so no system policy change is required. The launcher installs
+dependencies when needed, creates `backend/.env` from the safe template if it
+is missing, reuses healthy services instead of starting duplicates, waits for
+both services to respond, and opens the frontend. Keep the two service windows
+open while using the app.
 
 ## Start the backend
 
@@ -69,6 +89,29 @@ npm run dev -- --host 127.0.0.1
 ```
 
 The Vite development server proxies API requests to `127.0.0.1:8001`.
+
+## Optional Gemini assistant setup
+
+The Gemini assistant is separate from the original PyTorch classifier and
+detector. It never receives the uploaded image; the optional explanation action
+sends only the classifier's label, confidence, and disposal metadata.
+
+1. Create a new key at [Google AI Studio API keys](https://aistudio.google.com/apikey).
+   Revoke any previously exposed key; do not reuse it.
+2. In a separate PowerShell window at the repository root, open the ignored
+   backend environment file:
+
+   ```powershell
+   notepad .\backend\.env
+   ```
+
+3. Set `GEMINI_API_KEY` to the new key in that file. Keep it private; do not
+   put it in `frontend/.env.local`, any `VITE_*` setting, or a committed file.
+   The example model is `gemini-flash-latest`; the current official SDK is
+   `google-genai` (`google-genai>=2.34.0,<3.0.0`).
+4. Restart the backend. The WasteAI page and classification explanation button
+   will report an unavailable service until the backend has a key. Gemini calls
+   have a 20-second timeout and a best-effort per-instance request limit.
 
 ## Local URLs
 

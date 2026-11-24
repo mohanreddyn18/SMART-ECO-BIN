@@ -191,6 +191,16 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Validate deployment configuration
+        run: |
+          test -n "${{ vars.GCP_PROJECT_ID }}" || { echo "GCP_PROJECT_ID is required"; exit 1; }
+          test -n "${{ vars.GCP_REGION }}" || { echo "GCP_REGION is required"; exit 1; }
+          test -n "${{ vars.ARTIFACT_REPO }}" || { echo "ARTIFACT_REPO is required"; exit 1; }
+          test -n "${{ vars.GCP_SERVICE_ACCOUNT }}" || { echo "GCP_SERVICE_ACCOUNT is required"; exit 1; }
+          test -n "${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}" || { echo "GCP_WORKLOAD_IDENTITY_PROVIDER is required"; exit 1; }
+          test -n "${{ vars.FRONTEND_ORIGIN }}" || { echo "FRONTEND_ORIGIN must be the exact HTTPS Vercel origin"; exit 1; }
+          test -n "${{ vars.ADMIN_EMAILS }}" || { echo "ADMIN_EMAILS must list verified administrator email addresses"; exit 1; }
+
       # Recommended Keyless Authentication via Google Cloud Workload Identity Federation
       # Zero long-lived service account JSON keys stored in repository secrets.
       - name: Authenticate to Google Cloud via Workload Identity Federation
@@ -218,40 +228,13 @@ jobs:
             --platform managed \
             --region ${{ vars.GCP_REGION }} \
             --service-account ${{ vars.GCP_SERVICE_ACCOUNT }} \
-            --set-env-vars STORAGE_PROVIDER=firestore,GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }},FIRESTORE_COLLECTION=waste_records \
-            --memory 1Gi \
-            --cpu 1 \
+            --set-env-vars "^~^ENVIRONMENT=${{ github.event.inputs.target_environment }}~ALLOW_DEV_AUTH=false~AUTH_PROVIDER=firebase~STORAGE_PROVIDER=firestore~GOOGLE_CLOUD_PROJECT=${{ vars.GCP_PROJECT_ID }}~FIRESTORE_COLLECTION=waste_records~ADMIN_EMAILS=${{ vars.ADMIN_EMAILS }}~CORS_ORIGINS=${{ vars.FRONTEND_ORIGIN }}" \
+            --memory 2Gi \
+            --cpu 2 \
+            --timeout 300 \
             --allow-unauthenticated
 
-      - name: Capture Backend URL
-        id: backend-url
+      - name: Verify Backend Health
         run: |
-          URL=$(gcloud run services describe ecosort-backend --platform managed --region ${{ vars.GCP_REGION }} --format 'value(status.url)')
-          echo "BACKEND_URL=$URL" >> $GITHUB_ENV
-          echo "Backend deployed at: $URL"
-
-      - name: Build & Publish Frontend Image (with Backend URL Injected)
-        run: |
-          docker build -f frontend/Dockerfile \
-            --build-arg VITE_API_BASE_URL="${{ env.BACKEND_URL }}" \
-            -t ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REPO }}/ecosort-frontend:${{ github.sha }} frontend/
-          docker push ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REPO }}/ecosort-frontend:${{ github.sha }}
-
-      - name: Deploy Frontend to Cloud Run
-        run: |
-          gcloud run deploy ecosort-frontend \
-            --image ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REPO }}/ecosort-frontend:${{ github.sha }} \
-            --platform managed \
-            --region ${{ vars.GCP_REGION }} \
-            --memory 256Mi \
-            --cpu 1 \
-            --allow-unauthenticated
-
-      - name: Capture Frontend URL & Update Backend CORS
-        run: |
-          FRONTEND_URL=$(gcloud run services describe ecosort-frontend --platform managed --region ${{ vars.GCP_REGION }} --format 'value(status.url)')
-          echo "Updating backend CORS origins with frontend URL: $FRONTEND_URL"
-          gcloud run services update ecosort-backend \
-            --region ${{ vars.GCP_REGION }} \
-            --update-env-vars CORS_ORIGINS="$FRONTEND_URL"
-          echo "Deployment complete. Frontend: $FRONTEND_URL | Backend: ${{ env.BACKEND_URL }}"
+          BACKEND_URL=$(gcloud run services describe ecosort-backend --platform managed --region ${{ vars.GCP_REGION }} --format 'value(status.url)')
+          curl --fail --retry 10 --retry-delay 10 "$BACKEND_URL/health"

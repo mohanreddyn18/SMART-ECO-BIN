@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { isFirebaseConfigured } from '../../services/firebase';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -119,7 +120,11 @@ export default function LoginPage() {
           textAlign: 'center',
           marginBottom: '16px'
         }}>
-          <strong>Local development access:</strong> Use any valid email and a non-empty password for a citizen session. For the configured local administrator, use <code>admin@ecosortai.com</code>. Passwords are not stored or verified in demo mode; cross-device accounts require a configured production identity provider.
+          {isFirebaseConfigured ? (
+            <>Sign in with your Firebase Authentication account. Administrator access is granted only to verified identities authorized by the backend.</>
+          ) : (
+            <><strong>Local development access:</strong> Use any valid email and a non-empty password for a citizen session. For the configured local administrator, use <code>admin@ecosortai.com</code>. Local demo passwords are not stored or verified.</>
+          )}
         </div>
 
         <div className="auth-footer">

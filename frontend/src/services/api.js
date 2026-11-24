@@ -270,10 +270,15 @@ export const api = {
   /**
    * WasteAI Assistant (POST /api/wasteai)
    */
-  async queryWasteAI(prompt) {
+  async queryWasteAI(prompt, classificationResult = null) {
     return request('/wasteai', {
       method: 'POST',
-      body: JSON.stringify({ prompt })
+      body: JSON.stringify({
+        prompt,
+        ...(classificationResult
+          ? { classification_result: classificationResult }
+          : {})
+      })
     });
   },
 
@@ -300,6 +305,16 @@ export const api = {
   },
 
   /**
+   * Firebase user directory (administrator only).
+   */
+  async getUsers(pageToken = null) {
+    const params = new URLSearchParams();
+    if (pageToken) params.set('page_token', pageToken);
+    const query = params.toString();
+    return request(`/auth/users${query ? `?${query}` : ''}`);
+  },
+
+  /**
    * Controlled Development Token Issuance (POST /api/auth/demo-token)
    */
   async getDemoToken(email, role = 'citizen', name = 'Authorized User') {
@@ -313,7 +328,7 @@ export const api = {
    * Administrative Record Deletion (DELETE /api/history/{id})
    */
   async deleteRecord(recordId) {
-    return request(`/history/${recordId}`, {
+    return request(`/history/${encodeURIComponent(recordId)}`, {
       method: 'DELETE'
     });
   },

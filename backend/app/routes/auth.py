@@ -4,7 +4,7 @@ SMART ECO BIN — Authentication & Verification API Routes
 Provides token validation, session resolution, and controlled development token issuance.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.auth.models import (
     AuthenticatedUser,
     TokenVerificationResponse,
@@ -13,9 +13,58 @@ from app.auth.models import (
     UserRole
 )
 from app.auth.security import token_verifier, AuthenticationError
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_admin
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
+
+
+@router.get("/users")
+async def list_registered_users(
+    page_token: str | None = Query(None),
+    _current_user: AuthenticatedUser = Depends(require_admin),
+):
+    """Lists real Firebase users for the administrator directory."""
+    try:
+        import firebase_admin
+        from firebase_admin import auth
+
+        if not firebase_admin._apps:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Firebase Authentication is not connected on this backend.",
+            )
+
+        page = auth.list_users(max_results=1000, page_token=page_token)
+        admin_emails = token_verifier.config.admin_emails
+        users = []
+        for user in page.users:
+            claims = user.custom_claims or {}
+            is_admin = bool(
+                user.email_verified
+                and (
+                    user.email.lower() in admin_emails
+                    if admin_emails
+                    else claims.get("admin") is True
+                    or claims.get("role") == UserRole.ADMINISTRATOR
+                )
+            )
+            users.append({
+                "id": user.uid,
+                "name": user.display_name or user.email or user.uid,
+                "email": user.email or "",
+                "role": "administrator" if is_admin else "citizen",
+                "emailVerified": user.email_verified,
+                "createdAt": user.user_metadata.creation_timestamp,
+            })
+
+        return {"users": users, "nextPageToken": page.next_page_token}
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Firebase Authentication could not list registered users.",
+        ) from error
 
 
 @router.get("/me", response_model=AuthenticatedUser)

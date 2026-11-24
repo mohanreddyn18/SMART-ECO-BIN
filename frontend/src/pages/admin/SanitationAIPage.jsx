@@ -15,7 +15,7 @@ export default function SanitationAIPage() {
     {
       id: 1,
       sender: 'ai',
-      text: 'Greetings, Administrator. I am SanitationAI, an enterprise analytics agent with function-calling capabilities. I query real system telemetry to answer operational sanitation inquiries without hallucinating metrics.',
+      text: 'Greetings, Administrator. I can explain the current backend telemetry snapshot. This is software-only event data, not physical sensor readings, and AI explanations are not operational measurements.',
       toolUsed: null,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
@@ -46,71 +46,91 @@ export default function SanitationAIPage() {
     if (q.includes('status') || q.includes('posture')) {
       try {
         const intel = await api.getSanitation();
+        const sensorStatus = intel.hardwareSensors === false
+          ? 'No (software-only)'
+          : intel.hardwareSensors === true
+            ? 'Yes'
+            : 'Unavailable';
         return {
           tool: 'get_sanitation_status()',
           data: intel,
-          reply: `Current System Sanitation Posture is "${intel.currentStatus || 'UNAVAILABLE'}".\n\nSupporting Telemetry: ${intel.reason || 'Software evaluation based on event frequency.'} (Hardware sensors deployed: ${intel.hardwareSensorsDeployed ? 'Yes' : 'No - Pure Software Evaluation'}).`
+          reply: `Current System Sanitation Posture is "${intel.currentStatus || 'UNAVAILABLE'}".\n\nSupporting Telemetry: ${intel.reason || 'Unavailable.'} (Hardware sensors deployed: ${sensorStatus}).`
         };
       } catch (err) {
         return {
           tool: 'get_sanitation_status()',
           data: null,
-          reply: `Error retrieving sanitation telemetry: ${err.message}`
+          reply: 'Unable to retrieve sanitation telemetry. Check the backend connection and administrator permissions.'
         };
       }
     } else if (q.includes('anomal') || q.includes('outlier')) {
       try {
         const anom = await api.getAnomalies();
         const list = anom.anomalies || [];
+        const status = anom.status || 'UNAVAILABLE';
+        const algorithm = anom.algorithm || 'Unavailable';
+        const sampled = anom.recordsSampled ?? 'Unavailable';
         return {
           tool: 'get_anomalies()',
           data: anom,
-          reply: `Isolation Forest status: "${anom.status || 'Active'}". Sampled records: ${anom.recordsSampled || 0}.\n` +
-            (list.length === 0
-              ? 'No anomalies detected within nominal confidence bounds.'
-              : list.map((a) => `• [${a.severity}] ${a.type}: "${a.reason}" -> ${a.recommendation}`).join('\n'))
+          reply: `Anomaly assessment: "${status}". Algorithm: ${algorithm}. Records sampled: ${sampled}.\n` +
+            (anom.message || (list.length === 0
+              ? 'The backend did not report anomaly details.'
+              : list.map((a) => `• [${a.severity}] ${a.type}: "${a.reason}" -> ${a.recommendation}`).join('\n')))
         };
       } catch (err) {
         return {
           tool: 'get_anomalies()',
           data: null,
-          reply: `Error retrieving anomaly telemetry: ${err.message}`
+          reply: 'Unable to retrieve anomaly telemetry. Check the backend connection and administrator permissions.'
         };
       }
     } else if (q.includes('distribution') || q.includes('breakdown') || q.includes('category')) {
       try {
         const stats = await api.getAnalytics();
-        const total = stats.totalClassifications || 0;
+        const total = stats.totalClassifications ?? 'Unavailable';
         const bd = stats.categoryBreakdown || {};
+        const displayCount = (value) => Number.isFinite(value) ? value : 'Unavailable';
         return {
           tool: 'get_waste_distribution()',
           data: stats,
-          reply: `Aggregate Waste Distribution across ${total} verified events in storage:\n` +
-            `• Recyclable / Dry: ${bd.recyclable || 0}\n` +
-            `• Organic / Wet: ${bd.organic || 0}\n` +
-            `• Hazardous / E-Waste: ${bd.hazardous || 0}\n` +
-            `• Residual Trash: ${bd.trash || 0}`
+          reply: `Aggregate Waste Distribution across ${total} backend records:\n` +
+            `• Recyclable / Dry: ${displayCount(bd.recyclable)}\n` +
+            `• Organic / Wet: ${displayCount(bd.organic)}\n` +
+            `• Hazardous / E-Waste: ${displayCount(bd.hazardous)}\n` +
+            `• Residual Trash: ${displayCount(bd.trash)}`
         };
       } catch (err) {
         return {
           tool: 'get_waste_distribution()',
           data: null,
-          reply: `Error retrieving distribution statistics: ${err.message}`
+          reply: 'Unable to retrieve distribution statistics. Check the backend connection and administrator permissions.'
         };
       }
+    } else if (q.includes('location') || q.includes('department')) {
+      return {
+        tool: null,
+        data: null,
+        reply: 'Location-level telemetry is unavailable. This application does not collect department or physical location data.'
+      };
     } else {
       try {
         const stats = await api.getAnalytics();
+        const total = stats.totalClassifications ?? 'Unavailable';
+        const today = stats.todayActivity ?? 'Unavailable';
+        const confidence = Number.isFinite(stats.averageConfidence)
+          ? `${stats.averageConfidence.toFixed(1)}%`
+          : 'Unavailable';
         return {
           tool: 'get_total_classifications()',
           data: stats,
-          reply: `Active storage provider (${stats.storageProvider || 'Local Storage'}) reports ${stats.totalClassifications || 0} verified classification records. Today's intake: ${stats.todayActivity || 0} events. Average model confidence: ${(stats.averageConfidence || 0).toFixed(1)}%.`
+          reply: `Active storage provider (${stats.storageProvider || 'Unavailable'}) reports ${total} classification records. Today's intake: ${today} events. Average model confidence: ${confidence}.`
         };
       } catch (err) {
         return {
           tool: 'get_total_classifications()',
           data: null,
-          reply: `Database reports operational baseline. Error: ${err.message}`
+          reply: `Unable to retrieve telemetry, so no analytics are available. Error: ${err.message}`
         };
       }
     }
@@ -132,6 +152,7 @@ export default function SanitationAIPage() {
     setLoading(true);
 
     // Try FastAPI SanitationAI endpoint if live
+    let assistantUnavailable = true;
     try {
       const data = await api.querySanitationAI(query);
       if (data && (data.reply || data.response)) {
@@ -141,7 +162,9 @@ export default function SanitationAIPage() {
             id: Date.now() + 1,
             sender: 'ai',
             text: data.reply || data.response,
-            toolUsed: data.function_called || 'backend_telemetry_query',
+            toolUsed: data.telemetry_grounded
+              ? 'Gemini-generated explanation · backend telemetry snapshot'
+              : data.function_called || null,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           }
         ]);
@@ -149,14 +172,15 @@ export default function SanitationAIPage() {
         return;
       }
     } catch {
-      // Fallback
+      assistantUnavailable = true;
     }
 
     // Client-side controlled execution with real backend data
     const q = query.toLowerCase();
     const toolName = q.includes('status') || q.includes('posture') ? 'get_sanitation_status()' :
                      q.includes('anomal') || q.includes('outlier') ? 'get_anomalies()' :
-                     q.includes('distribution') || q.includes('breakdown') ? 'get_waste_distribution()' : 'get_total_classifications()';
+                     q.includes('distribution') || q.includes('breakdown') || q.includes('category') ? 'get_waste_distribution()' :
+                     q.includes('location') || q.includes('department') ? 'Location data unavailable' : 'get_total_classifications()';
     setActiveTool(toolName);
 
     const execution = await executeControlledQuery(query);
@@ -166,7 +190,9 @@ export default function SanitationAIPage() {
       {
         id: Date.now() + 1,
         sender: 'ai',
-        text: execution.reply,
+        text: assistantUnavailable
+          ? `Assistant explanation unavailable. This is a direct backend result, not a Gemini-generated explanation.\n\n${execution.reply}`
+          : execution.reply,
         toolUsed: execution.tool,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
@@ -180,14 +206,14 @@ export default function SanitationAIPage() {
       <div className="page-header">
         <h1 className="page-title">SanitationAI Operations Agent</h1>
         <p className="page-subtitle">
-          Administrative intelligence engine grounded in real database queries & function calling (Zero hallucination policy)
+          Administrative assistant for explaining backend telemetry snapshots; physical sensor and location data are not available.
         </p>
       </div>
 
       <div className="alert alert-info" style={{ marginBottom: '1.25rem', fontSize: '0.85rem' }}>
-        <strong>Grounded Reasoning:</strong> SanitationAI is constrained to execute verified backend telemetry functions
-        (<code>get_sanitation_status</code>, <code>get_anomalies</code>, <code>get_waste_distribution</code>).
-        It explains strictly verified telemetry values and never invents database figures.
+        <strong>Data sources:</strong> Gemini explanations use a snapshot of backend telemetry and may be inaccurate.
+        Statuses and counts come from backend records; this system has no physical sensors or location data.
+        If the assistant is unavailable, direct backend results are labeled separately.
       </div>
 
       <div className="card" style={{ height: '68vh', display: 'flex', flexDirection: 'column', padding: 0 }}>
@@ -200,7 +226,7 @@ export default function SanitationAIPage() {
             <div>
               <div style={{ fontWeight: 600, color: '#111827' }}>SanitationAI Admin Agent</div>
               <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
-                Tools: get_sanitation_status, get_anomalies, get_waste_distribution
+                Sources: sanitation status, anomalies, category analytics
               </div>
             </div>
           </div>
@@ -226,7 +252,7 @@ export default function SanitationAIPage() {
             >
               {m.toolUsed && (
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#2563eb', background: '#eff6ff', padding: '2px 8px', borderRadius: '4px', marginBottom: '6px' }}>
-                  <FiTool /> Function executed: <code>{m.toolUsed}</code>
+                  <FiDatabase /> Source: <code>{m.toolUsed}</code>
                 </div>
               )}
               <div
@@ -251,11 +277,11 @@ export default function SanitationAIPage() {
           {loading && (
             <div style={{ alignSelf: 'flex-start' }}>
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.75rem', color: '#2563eb', background: '#eff6ff', padding: '2px 8px', borderRadius: '4px', marginBottom: '6px' }}>
-                <FiTool /> Calling database function: <code>{activeTool || 'executing...'}</code>
+                <FiTool /> {activeTool ? 'Reading backend data:' : 'Preparing assistant response:'} <code>{activeTool || 'Gemini'}</code>
               </div>
               <div style={{ backgroundColor: '#f3f4f6', padding: '0.75rem 1rem', borderRadius: '12px 12px 12px 2px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div className="spinner" style={{ width: '14px', height: '14px', borderWidth: '2px' }}></div>
-                <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>Querying Firestore telemetry & synthesizing response...</span>
+                <span style={{ fontSize: '0.85rem', color: '#6b7280' }}>Preparing a response from available backend telemetry...</span>
               </div>
             </div>
           )}

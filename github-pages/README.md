@@ -52,11 +52,16 @@ Verify ONNX Runtime Web CPU inference with `npm run test:model`.
 ## GitHub Pages configuration
 
 The repository is `mohanreddyn18/SMART-ECO-BIN`, so the project-site base path
-is `/SMART-ECO-BIN/`, set in `vite.config.js`. The workflow at
-`.github/workflows/github-pages.yml` builds `github-pages/` and deploys its
-`dist/` output. Enable **Settings → Pages → Build and deployment → GitHub
-Actions**. After explicitly pushing the workflow and site, the URL format is:
+is `/SMART-ECO-BIN/`, set in `vite.config.js`. The workflow at `.github/workflows/github-pages.yml` can be run manually to
+build this folder and upload a downloadable artifact. It does **not** publish
+to GitHub Pages. The workflow is intentionally isolated from the original
+React/Vite + FastAPI application. The repository's currently published Pages
+site may remain visible until a repository administrator disables Pages under
+**Settings → Pages**.
+
+The former URL format for this preview was:
 
 `https://mohanreddyn18.github.io/SMART-ECO-BIN/`
 
-No deploy or push is performed by preparing this directory.
+This URL is not the original full application. No deploy or push is performed
+by building this directory.

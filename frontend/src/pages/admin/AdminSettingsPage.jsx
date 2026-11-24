@@ -1,115 +1,100 @@
-import React, { useState } from 'react';
-import { FiSave, FiCheckCircle, FiShield, FiServer, FiKey, FiLock } from 'react-icons/fi';
+import React, { useEffect, useState } from 'react';
+import { FiCheckCircle, FiShield, FiXCircle } from 'react-icons/fi';
+import { api } from '../../services/api';
+import { isFirebaseConfigured } from '../../services/firebase';
+
+function StatusBadge({ available, label }) {
+  return available
+    ? <span className="badge badge-success"><FiCheckCircle /> {label}</span>
+    : <span className="badge badge-warning"><FiXCircle /> Not configured / unavailable</span>;
+}
 
 export default function AdminSettingsPage() {
-  const [geminiConfigured, setGeminiConfigured] = useState(true);
-  const [firebaseConfigured, setFirebaseConfigured] = useState(true);
-  const [modelLoaded, setModelLoaded] = useState(true);
-  const [saved, setSaved] = useState(false);
+  const [health, setHealth] = useState(null);
+  const [storage, setStorage] = useState(null);
+  const [security, setSecurity] = useState(null);
+  const [error, setError] = useState('');
 
-  const handleSave = (e) => {
-    e.preventDefault();
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
-  };
+  useEffect(() => {
+    let active = true;
+    Promise.all([api.getHealth(), api.getStorageStatus(), api.getSecurityPosture()])
+      .then(([backendHealth, storageStatus, securityStatus]) => {
+        if (!active) return;
+        setHealth(backendHealth);
+        setStorage(storageStatus);
+        setSecurity(securityStatus);
+      })
+      .catch((requestError) => {
+        if (active) setError(requestError.message || 'Could not load live backend status.');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div>
       <div className="page-header">
         <h1 className="page-title">System Infrastructure & Admin Settings</h1>
         <p className="page-subtitle">
-          Integration health, cloud service status, security policies, and environment parameters
+          Live integration health, cloud service status, and security configuration
         </p>
       </div>
 
-      {saved && (
-        <div className="alert alert-success" style={{ marginBottom: '1.5rem' }}>
-          Infrastructure settings confirmed and synchronized.
-        </div>
-      )}
+      {error && <div className="alert alert-error" role="alert">{error}</div>}
 
       <div className="grid-2">
         <div className="card">
           <div className="card-header">
             <h3 className="card-title">Backend & Cloud Integration Status</h3>
-            <p className="card-subtitle">Real-time connectivity to cloud services</p>
+            <p className="card-subtitle">Values reported by the production API, not assumed configuration</p>
           </div>
 
           <div className="detail-list">
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 0', borderBottom: '1px solid #f3f4f6' }}>
-              <div>
-                <strong>ML Model Engine (PyTorch)</strong>
-                <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>MobileNetV2 (12 Classes) - 9.8 MB</div>
-              </div>
-              <span className="badge badge-success"><FiCheckCircle /> Verified Active</span>
+              <strong>MobileNetV2 Classifier</strong>
+              <StatusBadge available={health?.classifier_loaded} label="Loaded" />
             </div>
-
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 0', borderBottom: '1px solid #f3f4f6' }}>
-              <div>
-                <strong>Firebase Authentication & Firestore</strong>
-                <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>Cloud Database & User Identity</div>
-              </div>
-              <span className="badge badge-success"><FiCheckCircle /> Connected</span>
+              <strong>Waste Object Detector</strong>
+              <StatusBadge available={health?.detector_loaded} label="Loaded" />
             </div>
-
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 0', borderBottom: '1px solid #f3f4f6' }}>
-              <div>
-                <strong>Gemini API Gateway</strong>
-                <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>WasteAI & SanitationAI Reasoning Engine</div>
-              </div>
-              <span className="badge badge-success"><FiCheckCircle /> Ready</span>
+              <strong>Firebase Authentication</strong>
+              <StatusBadge available={isFirebaseConfigured && security?.server_side_token_verification} label="Configured" />
             </div>
-
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 0', borderBottom: '1px solid #f3f4f6' }}>
+              <strong>Persistent Cloud Storage</strong>
+              <StatusBadge available={storage?.persistent_cloud_enabled} label={storage?.cloud_provider || 'Connected'} />
+            </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.75rem 0' }}>
-              <div>
-                <strong>Hardware Sensor Emulation Gate</strong>
-                <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>Strict Pure-Software Mode (No IoT)</div>
-              </div>
-              <span className="badge badge-info">Enforced (Software-Only)</span>
+              <strong>Gemini AI Assistant</strong>
+              <StatusBadge available={health?.gemini_configured} label="Configured" />
             </div>
           </div>
+          {health && (
+            <p style={{ marginTop: '1rem', fontSize: '0.85rem', color: '#6b7280' }}>
+              API status: {health.status}. Storage mode: {storage?.mode || 'Unavailable'}.
+            </p>
+          )}
         </div>
 
-        <form onSubmit={handleSave} className="card">
+        <div className="card">
           <div className="card-header">
             <h3 className="card-title">Security & Environment Guardrails</h3>
-            <p className="card-subtitle">API key isolation and role access controls</p>
+            <p className="card-subtitle">Sensitive configuration is server-side and is not editable in this browser.</p>
           </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-            <div className="form-group">
-              <label>API Gateway Endpoint</label>
-              <input
-                type="text"
-                className="form-control"
-                value="http://127.0.0.1:8000"
-                readOnly
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Storage Image Expiry Period (Days)</label>
-              <input
-                type="number"
-                className="form-control"
-                defaultValue={90}
-              />
-            </div>
-
-            <div className="form-group">
-              <label>Administrative Session Timeout (Minutes)</label>
-              <input
-                type="number"
-                className="form-control"
-                defaultValue={60}
-              />
-            </div>
-
-            <button type="submit" className="btn btn-primary">
-              <FiSave style={{ marginRight: '6px' }} /> Save System Configurations
-            </button>
+          <div className="detail-list">
+            <p><strong>API Gateway Endpoint</strong><br />{import.meta.env.VITE_API_BASE_URL || 'Same origin / local Vite proxy'}</p>
+            <p><strong>Authentication Provider</strong><br />{security?.admin_auth_mode || 'Unavailable'}</p>
+            <p><strong>Role-based access control</strong><br />{security?.rbac_enforced ? 'Enabled' : 'Unavailable'}</p>
+            <p><strong>Allowed frontend origins</strong><br />{security?.cors_origins_count ?? 'Unavailable'}</p>
+            <p style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#6b7280' }}>
+              <FiShield /> Configure secrets and access policy in the hosting provider, never in this page.
+            </p>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );

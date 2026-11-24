@@ -18,7 +18,8 @@ RUN pip install --no-cache-dir --prefix=/install/deps \
 
 # Copy the backend requirements file from the repository-root build context.
 COPY backend/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir --prefix=/install/deps -r requirements.txt
+RUN grep -Ev '^(torch|torchvision)([<=>!~].*)?$' requirements.txt > runtime-requirements.txt && \
+    pip install --no-cache-dir --prefix=/install/deps -r runtime-requirements.txt
 
 # ------------------------------------------------------------------------------
 # Production Runtime Stage
@@ -60,7 +61,8 @@ ENV PYTHONUNBUFFERED=1 \
     PORT=8080 \
     ENVIRONMENT=production \
     ALLOW_DEV_AUTH=false \
-    STORAGE_PROVIDER=local
+    AUTH_PROVIDER=firebase \
+    STORAGE_PROVIDER=firestore
 
 # Cloud Run dynamic port binding
 EXPOSE 8080

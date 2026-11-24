@@ -18,7 +18,9 @@ import os
 import sys
 import time
 import unittest
+from unittest.mock import AsyncMock, patch
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 import jwt
 from fastapi.testclient import TestClient
 
@@ -137,12 +139,54 @@ class TestStage6AuthAndRBAC(unittest.TestCase):
         self.assertEqual(res_citizen.status_code, 403)
 
         # Admin -> 200
-        res_admin = self.client.post(
-            "/api/sanitationai",
-            json=prompt_payload,
-            headers={"Authorization": f"Bearer {self.admin_token}"}
-        )
+        with patch(
+            "app.routes.ai.gemini_service.query_sanitation_ai",
+            new_callable=AsyncMock,
+            return_value={
+                "reply": "Assessment based on current telemetry.",
+                "function_called": "get_sanitation_status()",
+                "telemetry_grounded": True,
+            },
+        ):
+            res_admin = self.client.post(
+                "/api/sanitationai",
+                json=prompt_payload,
+                headers={"Authorization": f"Bearer {self.admin_token}"}
+            )
         self.assertEqual(res_admin.status_code, 200)
+
+    def test_admin_user_directory_uses_verified_firebase_data(self):
+        user = SimpleNamespace(
+            uid="verified-admin",
+            display_name="Verified Admin",
+            email="admin@ecosortai.com",
+            email_verified=True,
+            custom_claims={},
+            user_metadata=SimpleNamespace(creation_timestamp=1761840000000),
+        )
+        page = SimpleNamespace(users=[user], next_page_token=None)
+
+        with patch("firebase_admin._apps", {"test-app": object()}), patch(
+            "firebase_admin.auth.list_users", return_value=page
+        ) as list_users:
+            response = self.client.get(
+                "/api/auth/users",
+                headers={"Authorization": f"Bearer {self.admin_token}"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        list_users.assert_called_once_with(max_results=1000, page_token=None)
+        self.assertEqual(response.json()["users"][0]["id"], "verified-admin")
+        self.assertEqual(response.json()["users"][0]["role"], "administrator")
+        self.assertTrue(response.json()["users"][0]["emailVerified"])
+
+    def test_admin_user_directory_rejects_non_admins(self):
+        self.assertEqual(self.client.get("/api/auth/users").status_code, 401)
+        response = self.client.get(
+            "/api/auth/users",
+            headers={"Authorization": f"Bearer {self.citizen_a_token}"},
+        )
+        self.assertEqual(response.status_code, 403)
 
     def test_06_token_signature_verification_rejects_forgery(self):
         """Forged tokens signed with arbitrary keys must be rejected with 401."""

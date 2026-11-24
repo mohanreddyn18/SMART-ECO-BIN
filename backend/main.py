@@ -1,5 +1,6 @@
 import os
 import logging
+from urllib.parse import urlsplit
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -45,20 +46,51 @@ default_origins = [
 ]
 
 cors_origins_env = os.getenv("CORS_ORIGINS", "").strip()
-if cors_origins_env:
-    custom_origins = [orig.strip() for orig in cors_origins_env.split(",") if orig.strip()]
-    allowed_origins = list(dict.fromkeys(default_origins + custom_origins))
-else:
-    allowed_origins = default_origins
+
+
+def _get_allowed_origins(configured_origins: str, is_secure_environment: bool) -> list[str]:
+    custom_origins = list(dict.fromkeys(
+        origin.strip() for origin in configured_origins.split(",") if origin.strip()
+    ))
+
+    if is_secure_environment:
+        if not custom_origins:
+            raise SecurityConfigurationError(
+                "Production/staging startup requires CORS_ORIGINS to contain the exact HTTPS frontend origin."
+            )
+        for origin in custom_origins:
+            parsed = urlsplit(origin)
+            if (
+                parsed.scheme != "https"
+                or not parsed.netloc
+                or parsed.path
+                or parsed.query
+                or parsed.fragment
+                or parsed.username
+                or parsed.password
+                or "*" in origin
+            ):
+                raise SecurityConfigurationError(
+                    "Production/staging CORS_ORIGINS entries must be exact HTTPS origins without paths or wildcards."
+                )
+        return custom_origins
+
+    return list(dict.fromkeys(default_origins + custom_origins))
+
+
+allowed_origins = _get_allowed_origins(
+    cors_origins_env,
+    security_config.is_production or security_config.is_staging,
+)
 
 logger.info(f"Configured CORS allowed origins: {allowed_origins}")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "DELETE"],
+    allow_headers=["Accept", "Authorization", "Content-Type", "X-Idempotency-Key"],
 )
 
 # Root Welcome endpoint
@@ -94,6 +126,7 @@ async def health_check():
     from app.services.model_service import classifier_service
     from app.services.detector_service import detector_service
     from app.services.storage_service import storage_service
+    from app.ai.gemini_client import gemini_service
     return {
         "status": "healthy" if classifier_service.is_loaded and detector_service.model_status == "loaded" else "degraded",
         "service": "EcoSort AI API Gateway",
@@ -102,6 +135,7 @@ async def health_check():
         "classifier_loaded": classifier_service.is_loaded,
         "classifier_error": classifier_service.load_error,
         "detector_loaded": detector_service.model_status == "loaded",
+        "gemini_configured": gemini_service.client_available,
         "mode": "Software-Only (Pure Computational Intelligence)",
         "hardware_sensors": False,
         "storage_mode": storage_service.get_status()["mode"]
@@ -161,10 +195,10 @@ app.include_router(detection_router, prefix="/api")
 # Global Exception Handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Global exception on {request.url.path}: {exc}")
+    logger.exception("Unhandled exception on %s", request.url.path)
     return JSONResponse(
         status_code=500,
-        content={"detail": "An internal server error occurred.", "error": str(exc)}
+        content={"detail": "An internal server error occurred."}
     )
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import io
 import os
 import sys
 import unittest
+from unittest.mock import AsyncMock, patch
 from PIL import Image
 from fastapi.testclient import TestClient
 
@@ -10,6 +11,7 @@ if backend_path not in sys.path:
     sys.path.insert(0, backend_path)
 
 import main
+from app.routes.ai import clear_gemini_rate_limits
 
 
 class TestEcoSortAPI(unittest.TestCase):
@@ -25,6 +27,9 @@ class TestEcoSortAPI(unittest.TestCase):
         from app.auth.security import token_verifier
         token, _ = token_verifier.issue_dev_token("admin@ecosortai.com", role="administrator")
         cls.client = TestClient(main.app, headers={"Authorization": f"Bearer {token}"})
+
+    def setUp(self):
+        clear_gemini_rate_limits()
 
     def test_health_endpoint(self):
         """GET /health must return 200 OK with health status and software-only declaration."""
@@ -152,23 +157,90 @@ class TestEcoSortAPI(unittest.TestCase):
         self.assertIn(response.status_code, [400, 422])
 
     def test_wasteai_endpoint(self):
-        """POST /api/wasteai must return guidance for user queries."""
-        response = self.client.post(
-            "/api/wasteai",
-            json={"prompt": "How do I safely recycle lithium batteries?"}
-        )
+        """POST /api/wasteai returns a generated answer when Gemini is configured."""
+        with patch(
+            "app.routes.ai.gemini_service.query_waste_ai",
+            new_callable=AsyncMock,
+            return_value="Use a designated battery collection point.",
+        ):
+            response = self.client.post(
+                "/api/wasteai",
+                json={"prompt": "How do I safely recycle lithium batteries?"}
+            )
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("reply", data)
         self.assertIn("source", data)
         self.assertTrue(len(data["reply"]) > 0)
 
-    def test_sanitationai_endpoint(self):
-        """POST /api/sanitationai must return grounded operational answers."""
-        response = self.client.post(
-            "/api/sanitationai",
-            json={"prompt": "What is the overall sanitation status?"}
+    def test_wasteai_explains_classifier_metadata_without_uploading_an_image(self):
+        classification = {
+            "predicted_class": "battery",
+            "confidence": 92.5,
+            "waste_type": "Hazardous / E-Waste",
+            "recommendation": "Keep isolated and use a battery collection point.",
+            "disposal_bin": "Hazardous Waste Depot",
+            "requires_manual_review": True,
+        }
+        with patch(
+            "app.routes.ai.gemini_service.query_waste_ai",
+            new_callable=AsyncMock,
+            return_value="The classifier identified a battery.",
+        ) as query:
+            response = self.client.post(
+                "/api/wasteai",
+                json={
+                    "prompt": "Explain this classifier result.",
+                    "classification_result": classification,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        query.assert_awaited_once_with(
+            "Explain this classifier result.",
+            classification,
         )
+
+    def test_wasteai_rate_limit_is_enforced(self):
+        with patch(
+            "app.routes.ai.gemini_service.query_waste_ai",
+            new_callable=AsyncMock,
+            return_value="Use a designated battery collection point.",
+        ):
+            for _ in range(10):
+                response = self.client.post(
+                    "/api/wasteai",
+                    json={"prompt": "How do I recycle a battery?"},
+                )
+                self.assertEqual(response.status_code, 200)
+
+            limited = self.client.post(
+                "/api/wasteai",
+                json={"prompt": "How do I recycle a battery?"},
+            )
+
+        self.assertEqual(limited.status_code, 429)
+
+    def test_wasteai_unavailable_without_gemini_does_not_fake_a_response(self):
+        with patch("app.routes.ai.gemini_service.client", None):
+            response = self.client.post(
+                "/api/wasteai",
+                json={"prompt": "What is the current recycling policy?"},
+            )
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("not configured", response.json()["detail"])
+
+    def test_sanitationai_endpoint(self):
+        """POST /api/sanitationai returns a generated telemetry-grounded answer."""
+        with patch(
+            "app.routes.ai.gemini_service.query_sanitation_ai",
+            new_callable=AsyncMock,
+            return_value={"reply": "The stored sanitation assessment is unavailable.", "function_called": "get_sanitation_status()", "telemetry_grounded": True},
+        ):
+            response = self.client.post(
+                "/api/sanitationai",
+                json={"prompt": "What is the overall sanitation status?"}
+            )
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("reply", data)

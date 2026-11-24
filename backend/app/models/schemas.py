@@ -146,9 +146,19 @@ class StorageStatusResponse(BaseModel):
     collection: Optional[str] = None
     notes: Optional[str] = None
 
+class WasteClassificationContext(BaseModel):
+    predicted_class: str = Field(..., min_length=1, max_length=64)
+    confidence: float = Field(..., ge=0, le=100)
+    waste_type: str = Field(..., min_length=1, max_length=80)
+    recommendation: str = Field(..., min_length=1, max_length=500)
+    disposal_bin: str = Field(..., min_length=1, max_length=120)
+    requires_manual_review: bool = False
+
+
 class AIQueryRequest(BaseModel):
-    prompt: str
+    prompt: str = Field(..., min_length=1, max_length=2000)
     userId: Optional[str] = None
+    classification_result: Optional[WasteClassificationContext] = None
 
 class WasteAIResponse(BaseModel):
     reply: str

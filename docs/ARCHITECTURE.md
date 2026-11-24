@@ -18,7 +18,7 @@ graph TD
     B -->|Preprocessing: 224x224 RGB Normalization| C[PyTorch Inference Engine]
     C -->|MobileNetV2 12-Class Weights| D[waste_model.pth]
     B -->|Classification Records| E[Threshold-Based Anomaly Checks]
-    B -->|Grounded Function Calling| F[Gemini 1.5 Flash AI Assistant]
+    B -->|Verified Telemetry Context| F[Gemini AI Assistant]
     B -->|User Auth & Audit Sync| G[Firebase Suite]
     G --> H[(Firestore Database)]
     G --> I[Firebase Authentication]
@@ -35,7 +35,7 @@ graph TD
 - **Reactive Chat Interfaces:** 
   - `WasteAI` for user recycling queries.
   - `SanitationAI` for admin operations with grounded function-call execution traces.
-- **Guaranteed Isolation:** Centralized mock fallback structures ensure non-disruptive offline usability.
+- **Production data integrity:** Operational pages read from the FastAPI service; failed/unconfigured services are shown as unavailable rather than replaced with sample telemetry.
 
 ### B. Machine Learning Inference Engine (MobileNetV2 Transfer Learning)
 - **Framework:** PyTorch
@@ -66,5 +66,7 @@ graph TD
 - **Limitations:** Does not use a trained anomaly model, physical sensors, location data, or event-rate measurements.
 
 ### E. AI Assistants (WasteAI & SanitationAI)
-- **Backend Proxying:** API keys remain strictly hidden in backend `.env` configuration; never exposed to React clients.
-- **SanitationAI Function Calling:** Grounded in real telemetry endpoints (`get_sanitation_status`, `get_anomalies`, `get_waste_distribution`) with strict anti-hallucination guardrails.
+- **Backend Proxying:** API keys remain strictly hidden in the backend environment or Secret Manager; never exposed to React clients.
+- **Classifier Explanations:** WasteAI can explain the existing classifier's label and disposal metadata. It receives JSON only, never the uploaded image, and cannot replace or modify the model result.
+- **SanitationAI Telemetry:** Responses use a verified backend telemetry snapshot, without claiming physical sensors or fabricating unavailable values. When Gemini is not configured or cannot respond, the API reports an unavailable service rather than returning a fabricated AI answer.
+- **Current SDK:** Uses Google's `google-genai` Python SDK and the `gemini-flash-latest` model alias; provider calls are backend-only, time-limited, and rate-limited per instance.

@@ -26,6 +26,9 @@ export default function WasteDetectionPage() {
   const [isDragging, setIsDragging] = useState(false);
   const [result, setResult] = useState(null);
   const [detectionResult, setDetectionResult] = useState(null);
+  const [aiExplanation, setAiExplanation] = useState('');
+  const [aiExplanationError, setAiExplanationError] = useState('');
+  const [aiExplanationLoading, setAiExplanationLoading] = useState(false);
   const [confThreshold, setConfThreshold] = useState(0.25);
 
   // Camera states and refs
@@ -169,6 +172,8 @@ export default function WasteDetectionPage() {
     setPreview(objectUrl);
     setResult(null);
     setDetectionResult(null);
+    setAiExplanation('');
+    setAiExplanationError('');
   };
 
   const handleDrop = (e) => {
@@ -189,6 +194,8 @@ export default function WasteDetectionPage() {
 
     setLoading(true);
     setError('');
+    setAiExplanation('');
+    setAiExplanationError('');
 
     try {
       const idempotencyKey = `req-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
@@ -217,10 +224,43 @@ export default function WasteDetectionPage() {
     setPreview(null);
     setResult(null);
     setDetectionResult(null);
+    setAiExplanation('');
+    setAiExplanationError('');
     setError('');
     setCameraError('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+  };
+
+  const explainClassification = async () => {
+    if (!result || aiExplanationLoading) return;
+
+    setAiExplanationLoading(true);
+    setAiExplanationError('');
+    setAiExplanation('');
+    try {
+      const response = await api.queryWasteAI(
+        'Explain this classification and its disposal recommendation in simple language.',
+        {
+          predicted_class: result.predictedClass,
+          confidence: result.confidence,
+          waste_type: result.wasteType,
+          recommendation: result.recommendation,
+          disposal_bin: result.disposalBin,
+          requires_manual_review: Boolean(result.requiresManualReview)
+        }
+      );
+      if (!response?.reply) {
+        throw new Error('WasteAI returned no explanation.');
+      }
+      setAiExplanation(response.reply);
+    } catch (requestError) {
+      setAiExplanationError(
+        requestError.message || 'WasteAI could not explain this result.'
+      );
+    } finally {
+      setAiExplanationLoading(false);
     }
   };
 
@@ -708,6 +748,39 @@ export default function WasteDetectionPage() {
                   <div style={{ fontWeight: 500, color: '#1f2937', lineHeight: 1.5 }}>
                     {result.recommendation}
                   </div>
+                </div>
+
+                <div style={{ padding: '0.75rem 0', borderBottom: '1px solid #f3f4f6' }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={explainClassification}
+                    disabled={aiExplanationLoading}
+                  >
+                    {aiExplanationLoading
+                      ? 'Generating explanation...'
+                      : 'Explain this result with WasteAI'}
+                  </button>
+                  <p style={{ color: '#6b7280', fontSize: '0.78rem', margin: '0.5rem 0 0' }}>
+                    Optional Gemini-generated explanation. Only the classifier result
+                    and disposal metadata are sent; the image is not shared. This
+                    explanation does not change the model prediction.
+                  </p>
+                  {aiExplanationError && (
+                    <div className="alert alert-error" role="alert" style={{ marginTop: '0.75rem' }}>
+                      {aiExplanationError}
+                    </div>
+                  )}
+                  {aiExplanation && (
+                    <div
+                      className="alert alert-info"
+                      role="status"
+                      style={{ marginTop: '0.75rem', whiteSpace: 'pre-wrap' }}
+                    >
+                      <strong>AI-generated explanation (not a new classification)</strong>
+                      <div style={{ marginTop: '0.35rem' }}>{aiExplanation}</div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Timestamp */}

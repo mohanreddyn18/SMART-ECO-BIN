@@ -1,5 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import {
+  createUserWithEmailAndPassword,
+  getIdToken,
+  onIdTokenChanged,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile
+} from 'firebase/auth';
 import { api, setAuthToken, setOnUnauthorized } from '../services/api';
+import { firebaseAuth } from '../services/firebase';
 
 const AuthContext = createContext(null);
 
@@ -7,9 +18,9 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [authMode, setAuthMode] = useState('server_verified');
+  const [authMode, setAuthMode] = useState(firebaseAuth ? 'firebase' : 'development');
 
-  const logout = useCallback(() => {
+  const clearSession = useCallback(() => {
     setUser(null);
     setToken(null);
     setAuthToken(null);
@@ -17,85 +28,131 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('ecosort_user');
   }, []);
 
-  // Register automatic session expiration callback on HTTP 401
+  const logout = useCallback(async () => {
+    if (firebaseAuth) {
+      try {
+        await signOut(firebaseAuth);
+      } catch (error) {
+        console.error('Firebase sign-out failed:', error);
+      }
+    }
+    clearSession();
+  }, [clearSession]);
+
+  const establishVerifiedSession = useCallback(async (verifiedToken, preferredName = '') => {
+    setAuthToken(verifiedToken);
+    const verification = await api.verifyAuthToken(verifiedToken);
+    if (!verification?.valid || !verification.user) {
+      throw new Error('The backend could not verify this sign-in.');
+    }
+
+    const verifiedUser = {
+      ...verification.user,
+      name: verification.user.name || preferredName || verification.user.email,
+      role: verification.role || verification.user.role,
+      isAdmin: verification.is_admin
+    };
+    setAuthToken(verifiedToken);
+    setToken(verifiedToken);
+    setUser(verifiedUser);
+    setAuthMode(firebaseAuth ? 'firebase' : 'server_verified');
+    localStorage.setItem('ecosort_auth_token', verifiedToken);
+    localStorage.setItem('ecosort_user', JSON.stringify(verifiedUser));
+    return verifiedUser;
+  }, []);
+
   useEffect(() => {
     setOnUnauthorized(() => {
-      console.warn('Authentication token expired or rejected by backend. Terminating active session.');
-      logout();
+      void logout();
     });
   }, [logout]);
 
-  // Restore and cryptographically verify persisted session on mount
   useEffect(() => {
-    const restoreSession = async () => {
-      const savedToken = localStorage.getItem('ecosort_auth_token');
-      const savedUserStr = localStorage.getItem('ecosort_user');
+    let active = true;
 
-      if (savedToken) {
-        setAuthToken(savedToken);
-        setToken(savedToken);
-        try {
-          // Cryptographically verify token with server
-          const verification = await api.verifyAuthToken(savedToken);
-          if (verification && verification.valid && verification.user) {
-            setUser({
-              ...verification.user,
-              role: verification.role || verification.user.role,
-              isAdmin: verification.is_admin
-            });
-            setLoading(false);
-            return;
-          }
-        } catch (err) {
-          console.warn('Persisted session failed server verification:', err.message);
-          logout();
-        }
-      } else if (savedUserStr) {
-        // Clear stale unauthenticated legacy storage
-        localStorage.removeItem('ecosort_user');
+    const restoreFirebaseSession = async (firebaseUser) => {
+      if (!active) return;
+      if (!firebaseUser) {
+        clearSession();
+        setLoading(false);
+        return;
       }
 
-      setLoading(false);
+      setLoading(true);
+      try {
+        const idToken = await getIdToken(firebaseUser);
+        await establishVerifiedSession(idToken, firebaseUser.displayName || '');
+      } catch (error) {
+        console.warn('Firebase session could not be verified by the backend:', error.message);
+        clearSession();
+        try {
+          await signOut(firebaseAuth);
+        } catch (signOutError) {
+          console.error('Could not clear the unverified Firebase session:', signOutError);
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
     };
 
-    restoreSession();
-  }, [logout]);
+    if (firebaseAuth) {
+      const unsubscribe = onIdTokenChanged(firebaseAuth, restoreFirebaseSession);
+      return () => {
+        active = false;
+        unsubscribe();
+      };
+    }
+
+    const savedToken = localStorage.getItem('ecosort_auth_token');
+    if (!savedToken || !import.meta.env.DEV) {
+      clearSession();
+      setLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    establishVerifiedSession(savedToken)
+      .catch((error) => {
+        console.warn('Persisted development session failed server verification:', error.message);
+        clearSession();
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [clearSession, establishVerifiedSession]);
 
   const login = async (email, password) => {
     setLoading(true);
     const emailClean = (email || '').trim().toLowerCase();
-    const isRequestedAdmin = emailClean === 'admin@ecosortai.com';
-    const requestedRole = isRequestedAdmin ? 'administrator' : 'citizen';
 
     try {
-      // 1. Request cryptographically signed token from backend
-      const tokenResponse = await api.getDemoToken(
-        emailClean,
-        requestedRole,
-        isRequestedAdmin ? 'Municipal Administrator' : 'Verified Citizen'
-      );
+      if (firebaseAuth) {
+        const credential = await signInWithEmailAndPassword(firebaseAuth, emailClean, password);
+        return await establishVerifiedSession(
+          await getIdToken(credential.user),
+          credential.user.displayName || ''
+        );
+      }
 
-      const verifiedToken = tokenResponse.token;
-      const verifiedUser = {
-        ...tokenResponse.user,
-        role: tokenResponse.user.role,
-        isAdmin: tokenResponse.user.is_admin
-      };
+      if (import.meta.env.DEV) {
+        const isRequestedAdmin = emailClean === 'admin@ecosortai.com';
+        const tokenResponse = await api.getDemoToken(
+          emailClean,
+          isRequestedAdmin ? 'administrator' : 'citizen',
+          isRequestedAdmin ? 'Municipal Administrator' : 'Verified Citizen'
+        );
+        setAuthMode(tokenResponse.mode || 'development_signed_token');
+        return await establishVerifiedSession(tokenResponse.token, tokenResponse.user?.name || '');
+      }
 
-      // 2. Persist token in API client and secure storage
-      setAuthToken(verifiedToken);
-      setToken(verifiedToken);
-      setUser(verifiedUser);
-      setAuthMode(tokenResponse.mode || 'server_verified');
-
-      localStorage.setItem('ecosort_auth_token', verifiedToken);
-      localStorage.setItem('ecosort_user', JSON.stringify(verifiedUser));
-
+      throw new Error('Production authentication is not configured. Set the VITE_FIREBASE_* project values and rebuild.');
+    } finally {
       setLoading(false);
-      return verifiedUser;
-    } catch (err) {
-      setLoading(false);
-      throw new Error(err.message || 'Authentication failed. Please verify credentials.');
     }
   };
 
@@ -104,33 +161,34 @@ export function AuthProvider({ children }) {
     const emailClean = (email || '').trim().toLowerCase();
 
     try {
-      const tokenResponse = await api.getDemoToken(emailClean, 'citizen', name || 'Citizen User');
-      const verifiedToken = tokenResponse.token;
-      const verifiedUser = {
-        ...tokenResponse.user,
-        name: name || 'Citizen User',
-        role: 'citizen',
-        isAdmin: false
-      };
+      if (firebaseAuth) {
+        const credential = await createUserWithEmailAndPassword(firebaseAuth, emailClean, password);
+        if (name?.trim()) {
+          await updateProfile(credential.user, { displayName: name.trim() });
+        }
+        await sendEmailVerification(credential.user);
+        return await establishVerifiedSession(
+          await getIdToken(credential.user),
+          name?.trim() || 'Citizen User'
+        );
+      }
 
-      setAuthToken(verifiedToken);
-      setToken(verifiedToken);
-      setUser(verifiedUser);
+      if (import.meta.env.DEV) {
+        const tokenResponse = await api.getDemoToken(emailClean, 'citizen', name || 'Citizen User');
+        return await establishVerifiedSession(tokenResponse.token, name || 'Citizen User');
+      }
 
-      localStorage.setItem('ecosort_auth_token', verifiedToken);
-      localStorage.setItem('ecosort_user', JSON.stringify(verifiedUser));
-
+      throw new Error('Production authentication is not configured. Set the VITE_FIREBASE_* project values and rebuild.');
+    } finally {
       setLoading(false);
-      return verifiedUser;
-    } catch (err) {
-      setLoading(false);
-      throw new Error(err.message || 'Registration failed. Please try again.');
     }
   };
 
   const resetPassword = async (email) => {
-    await new Promise(resolve => setTimeout(resolve, 600));
-    return true;
+    if (!firebaseAuth) {
+      throw new Error('Password reset requires Firebase Authentication to be configured.');
+    }
+    await sendPasswordResetEmail(firebaseAuth, email.trim());
   };
 
   const value = {
